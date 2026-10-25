@@ -1,193 +1,60 @@
-/*
- * Volunteer Plan 2027 — application styles
- * Most layout and component styling uses Tailwind utility classes. This file
- * contains global scrollbar rules and FullCalendar-specific overrides.
- */
+/* Volunteer planner — app-specific layout. Colours, type, spacing, radius,
+   shadows and motion come from tokens.css; shared components from base.css
+   and calendar.css. */
 
-/* Base Styles & Scrollbar */
-        body {
-            scrollbar-width: thin;
-            scrollbar-color: #a1a1aa transparent;
-        }
+.page { display: grid; gap: var(--space-6); padding-block: var(--space-6) var(--space-12); }
+.header-actions .button { white-space: nowrap; }
 
-        .dark body {
-            scrollbar-color: #52525b transparent;
-        }
+/* Header: compact banner over a photo, shaded so white text stays AA. ------------ */
+@keyframes fade-in { from { opacity: 0; } }
+.site-header-photo { position: relative; isolation: isolate; z-index: auto; color: #fff; background: var(--hero); border-bottom: 0; }
+.site-header-photo::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--hero) 90%, transparent) 0%, color-mix(in srgb, var(--hero) 62%, transparent) 38%, color-mix(in srgb, var(--hero) 12%, transparent) 100%),
+    url("header-photo.jpg") center 38% / cover no-repeat;
+  animation: fade-in var(--dur-slow) var(--ease) backwards; }
+.site-header-photo .header-inner { min-height: 112px; }
+.site-header-photo .brand-title { color: #fff; font-size: var(--text-xl); }
+.site-header-photo .brand-mark { color: var(--hero); background: #fff; }
+.site-header-photo .button { color: #fff; background: color-mix(in srgb, var(--hero) 82%, transparent); border-color: rgba(255, 255, 255, .6); backdrop-filter: blur(6px); }
+.site-header-photo .button:hover:not(:disabled) { background: color-mix(in srgb, var(--hero) 94%, transparent); box-shadow: none; }
+.site-header-photo .button-primary { color: var(--hero); background: #fff; border-color: #fff; }
+.site-header-photo .button-primary:hover:not(:disabled) { background: rgba(255, 255, 255, .88); border-color: transparent; }
 
+/* Task editor: a single column of steps. ---------------------------------------- */
+.task-modal { width: min(100%, 600px); }
+.task-modal .modal-body { padding-block: var(--space-6) var(--space-8); }
+.quick-fill summary { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 32px; color: var(--text-muted); font-size: var(--text-sm); font-weight: 600; cursor: pointer; list-style: none; }
+.quick-fill summary::-webkit-details-marker { display: none; }
+.quick-fill summary::after { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform var(--dur) var(--ease); }
+.quick-fill summary:hover { color: var(--brand-text); }
+.quick-fill[open] summary::after { transform: rotate(-135deg); }
+.quick-fill .chip-group { margin-top: var(--space-2); }
+.modal-footer #btn-delete { margin-right: auto; }
+.dialog-msg { margin-top: var(--space-2); color: var(--text-muted); }
 
+@media (max-width: 640px) {
+  .page { gap: var(--space-4); padding-top: var(--space-4); }
+  .panel { padding: var(--space-4) var(--space-3); }
+  .header-inner { flex-wrap: wrap; padding-block: var(--space-4); }
+  .site-header-photo .header-inner { min-height: 0; }
+  .site-header-photo::before { background-image: linear-gradient(90deg, color-mix(in srgb, var(--hero) 94%, transparent) 0%, color-mix(in srgb, var(--hero) 84%, transparent) 60%, color-mix(in srgb, var(--hero) 66%, transparent) 100%), url("header-photo.jpg"); }
+  .header-actions { width: 100%; }
+  .header-actions .button:not(.button-icon) { flex: 1; }
+  .modal-footer .button { flex: 1; }
+  .modal-footer #btn-delete { flex: none; margin-right: 0; }
+}
 
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
+/* Date field in the task editor (keyboard route to rescheduling). ---------------- */
+.date-field { margin-top: var(--space-2); }
+.date-input { width: auto; min-height: 40px; padding: 0 var(--space-3); color: var(--text); font-size: var(--text-sm); color-scheme: light; }
+html.dark .date-input { color-scheme: dark; }
 
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #a1a1aa;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #71717a;
-        }
-
-        .dark ::-webkit-scrollbar-thumb {
-            background: #52525b;
-        }
-
-        .dark ::-webkit-scrollbar-thumb:hover {
-            background: #71717a;
-        }
-
-        /* Light Mode FullCalendar Overrides */
-        .fc {
-            --fc-page-bg-color: #ffffff;
-            --fc-neutral-bg-color: #fafafa;
-            --fc-neutral-text-color: #18181b;
-            /* zinc-900 */
-            --fc-border-color: #e4e4e7;
-            /* zinc-200 */
-
-            --fc-button-bg-color: #18181b;
-            --fc-button-border-color: #18181b;
-            --fc-button-hover-bg-color: #27272a;
-            --fc-button-hover-border-color: #27272a;
-            --fc-button-active-bg-color: #000000;
-            --fc-button-active-border-color: #000000;
-
-            --fc-today-bg-color: rgba(24, 24, 27, 0.05);
-            font-family: 'Inter', sans-serif;
-            --fc-event-bg-color: transparent;
-            --fc-event-border-color: transparent;
-            --fc-event-box-shadow: 0;
-        }
-
-        /* Dark Mode FullCalendar Overrides */
-        .dark .fc {
-            --fc-page-bg-color: #27272a;
-            /* zinc-800 */
-            --fc-neutral-bg-color: #18181b;
-            /* zinc-900 */
-            --fc-neutral-text-color: #f4f4f5;
-            /* zinc-100 */
-            --fc-border-color: #3f3f46;
-            /* zinc-700 */
-
-            --fc-button-bg-color: #3f3f46;
-            --fc-button-border-color: #3f3f46;
-            --fc-button-hover-bg-color: #52525b;
-            --fc-button-hover-border-color: #52525b;
-            --fc-button-active-bg-color: #71717a;
-            --fc-button-active-border-color: #71717a;
-
-            --fc-today-bg-color: rgba(255, 255, 255, 0.05);
-
-            --fc-event-bg-color: transparent;
-            --fc-event-border-color: transparent;
-            --fc-event-box-shadow: 0;
-        }
-
-        .fc-col-header-cell {
-            padding: 8px 0;
-            font-weight: 600;
-        }
-
-        .fc .fc-toolbar-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        @media (min-width: 768px) {
-            .fc .fc-toolbar-title {
-                font-size: 1.5rem;
-            }
-        }
-
-        .fc-daygrid-day-number {
-            font-weight: 500;
-            padding: 8px !important;
-        }
-
-        .fc-daygrid-day:hover {
-            background-color: rgba(161, 161, 170, 0.1);
-            cursor: pointer;
-        }
-
-        /* Event Badges */
-        .fc-event {
-            border: none;
-            border-radius: 4px;
-            padding: 3px 6px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-            margin: 2px 4px;
-            cursor: pointer;
-            transition: transform 0.1s ease;
-        }
-
-        .fc-event:hover {
-            transform: scale(1.02);
-            z-index: 10;
-        }
-
-        /* Difficulty Badge Classes for Calendar (Light & Dark safe) */
-        .event-easy {
-            background-color: #dcfce7;
-            color: #166534;
-            border-left: 3px solid #22c55e;
-        }
-
-        .event-moderate {
-            background-color: #fef3c7;
-            color: #92400e;
-            border-left: 3px solid #f59e0b;
-        }
-
-        .event-strenuous {
-            background-color: #fee2e2;
-            color: #991b1b;
-            border-left: 3px solid #ef4444;
-        }
-
-        .dark .event-easy {
-            background-color: rgba(22, 101, 52, 0.3);
-            color: #86efac;
-            border-left-color: #4ade80;
-        }
-
-        .dark .event-moderate {
-            background-color: rgba(146, 64, 14, 0.3);
-            color: #fcd34d;
-            border-left-color: #fbbf24;
-        }
-
-        .dark .event-strenuous {
-            background-color: rgba(153, 27, 27, 0.3);
-            color: #fca5a5;
-            border-left-color: #f87171;
-        }
-
-        /* Form Interactive Elements */
-        .chip,
-        .pill,
-        .diff-card {
-            transition: all 0.2s ease;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        /* Modal Overlay */
-        #task-modal,
-        #dialog-modal {
-            backdrop-filter: blur(4px);
-        }
-
-        /* Calendar explicit height for proper rendering */
-        .calendar-wrapper {
-            height: 700px;
-            min-height: 600px;
-        }
+/* Drag and drop rescheduling. ---------------------------------------------------- */
+.fc .fc-daygrid-event.fc-event-draggable { cursor: grab; -webkit-touch-callout: none; user-select: none; }
+/* The dragged card follows the pointer; the original stays hidden in its cell. */
+html .fc .fc-event-dragging { z-index: var(--z-popover); background: var(--surface); border-color: var(--brand-text); box-shadow: var(--shadow-3); opacity: 1; transform: rotate(-1deg); }
+html .fc .fc-highlight { background: var(--brand-tint); box-shadow: inset 0 0 0 2px var(--brand-text); border-radius: 2px; opacity: 1; }
+.is-dragging, .is-dragging .fc-daygrid-event { cursor: grabbing; }
+.is-dragging .fc-daygrid-day:hover { background-color: transparent; }
+.is-dragging .fc-daygrid-event:hover { transform: none; box-shadow: none; }

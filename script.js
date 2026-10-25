@@ -7,7 +7,7 @@
  *   3. Import/export the task list as JSON.
  *   4. Export the schedule as a PDF.
  *
- * Third-party libraries (Tailwind, FullCalendar, jsPDF, AutoTable and Lucide)
+ * Third-party libraries (FullCalendar, jsPDF, AutoTable and Lucide)
  * are loaded by index.html. All UI actions are wired from this file; the HTML
  * contains no inline JavaScript event handlers.
  */
@@ -85,18 +85,13 @@ const taskPresets = [
 /** The app opens on the start of the 2027 planning year. */
 const DEFAULT_START_DATE = '2027-01-01';
 
-/** Class groups used to mark selected and unselected equipment chips. */
-const CHIP_ACTIVE = [
-    'border-zinc-800', 'bg-zinc-800', 'text-white',
-    'dark:border-zinc-200', 'dark:bg-zinc-200', 'dark:text-zinc-900'
-];
-const CHIP_INACTIVE = [
-    'border-zinc-300', 'bg-white', 'text-zinc-600',
-    'dark:border-zinc-700', 'dark:bg-zinc-950', 'dark:text-zinc-400'
-];
+/** Suggested sites and equipment shown as chips in the task editor. */
+const LOCATIONS = ['Brownsham', 'Peppercombe', 'East Titchberry', 'Dunsland', 'Explorer Days'];
+const EQUIPMENT = ['Sturdy boots', 'Waterproofs', 'Packed lunch', 'Wellies', 'Cake', 'Scythe'];
 
 let calendar;
 let confirmCallback = null;
+let customLocation = false;
 
 // Initialise only after all of the page's elements have been parsed.
 document.addEventListener('DOMContentLoaded', initialiseApp);
@@ -104,7 +99,7 @@ document.addEventListener('DOMContentLoaded', initialiseApp);
 /** Set up the app in dependency order. */
 function initialiseApp() {
     initTheme();
-    lucide.createIcons();
+    buildChoiceChips();
     buildPresetsUI();
     initCalendar();
     bindUIEvents();
@@ -112,22 +107,28 @@ function initialiseApp() {
     bindDirectoryEvents();
     resetForm();
     updateBottomList();
+    lucide.createIcons();
 
     // Keep FullCalendar's dimensions correct after a window resize.
     window.addEventListener('resize', () => {
         if (calendar) calendar.updateSize();
     });
 
-    // Escape closes the topmost modal without confirming any action.
+    // Escape closes, and Tab stays inside, the topmost open modal.
     document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        if (!document.getElementById('dialog-modal').classList.contains('hidden')) {
-            closeDialog();
-        } else if (!document.getElementById('task-modal').classList.contains('hidden')) {
-            closeModal();
+        const modal = [dialogModal(), taskModal()].find((element) => !element.hidden);
+        if (!modal) return;
+        if (event.key === 'Escape') {
+            if (modal === dialogModal()) closeDialog();
+            else closeModal();
+        } else if (event.key === 'Tab') {
+            trapFocus(event, modal);
         }
     });
 }
+
+const taskModal = () => document.getElementById('task-modal');
+const dialogModal = () => document.getElementById('dialog-modal');
 
 // ---------------------------------------------------------------------------
 // Small shared helpers
@@ -177,15 +178,11 @@ function createTaskId() {
     return `task_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** Return the CSS classes for a difficulty label. */
-function getDifficultyBadgeClasses(difficulty) {
-    if (String(difficulty).includes('Easy')) {
-        return 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-900/50';
-    }
-    if (String(difficulty).includes('Strenuous')) {
-        return 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-900/50';
-    }
-    return 'text-yellow-700 bg-yellow-50 border-yellow-200 dark:text-yellow-400 dark:bg-yellow-900/20 dark:border-yellow-900/50';
+/** Return the difficulty as a CSS modifier: easy, moderate or strenuous. */
+function difficultyClass(difficulty) {
+    if (String(difficulty).includes('Easy')) return 'easy';
+    if (String(difficulty).includes('Strenuous')) return 'strenuous';
+    return 'moderate';
 }
 
 /** Convert a potentially imported event to the fields the app supports. */
@@ -245,9 +242,14 @@ function initTheme() {
     updateThemeIcon();
 }
 
-/** Switch between light and dark mode and persist the user's preference. */
+/** Switch between light and dark mode (with a brief colour cross-fade) and persist the choice. */
 function toggleDarkMode() {
-    const isDark = document.documentElement.classList.toggle('dark');
+    const root = document.documentElement;
+    root.classList.add('theme-fade');
+    window.clearTimeout(toggleDarkMode.timer);
+    toggleDarkMode.timer = window.setTimeout(() => root.classList.remove('theme-fade'), 400);
+
+    const isDark = root.classList.toggle('dark');
     try {
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
     } catch (error) {
@@ -256,44 +258,84 @@ function toggleDarkMode() {
     updateThemeIcon();
 }
 
-/** Update the theme button icon to match the current mode. */
+/** Update the theme button icon and label to match the current mode. */
 function updateThemeIcon() {
     const button = document.getElementById('theme-toggle-btn');
     if (!button) return;
 
-    const iconName = document.documentElement.classList.contains('dark') ? 'sun' : 'moon';
-    button.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4"></i>`;
+    const isDark = document.documentElement.classList.contains('dark');
+    button.innerHTML = `<i data-lucide="${isDark ? 'sun' : 'moon'}"></i>`;
+    button.setAttribute('aria-label', isDark ? 'Switch to light theme' : 'Switch to dark theme');
     lucide.createIcons();
 }
 
 // ---------------------------------------------------------------------------
-// Reusable dialog modal
+// Modal helpers (shared by the task editor and the alert/confirm dialog)
 // ---------------------------------------------------------------------------
+
+const modalOpeners = new Map();
+
+/** Reveal a modal, remember the previously focused element, and move focus inside. */
+function showModal(modal, focusTarget, { always = false } = {}) {
+    modalOpeners.set(modal.id, document.activeElement);
+    modal.hidden = false;
+
+    const panel = modal.querySelector('.modal');
+    panel.tabIndex = -1;
+    // On touch screens, skip auto-focusing a text field so the keyboard doesn't cover the form.
+    const skipField = !always && window.matchMedia('(pointer: coarse)').matches;
+    (skipField || !focusTarget ? panel : focusTarget).focus({ preventScroll: true });
+}
+
+/** Hide a modal and return focus to whatever opened it. */
+function hideModal(modal) {
+    modal.hidden = true;
+    const opener = modalOpeners.get(modal.id);
+    modalOpeners.delete(modal.id);
+    if (opener && document.contains(opener) && !opener.closest('[hidden]')) {
+        opener.focus({ preventScroll: true });
+    }
+}
+
+/** Keep Tab / Shift+Tab inside the open modal. */
+function trapFocus(event, modal) {
+    const panel = modal.querySelector('.modal');
+    const focusable = [...panel.querySelectorAll('button, [href], summary, input:not([type="hidden"]), select, textarea')]
+        .filter((element) => !element.disabled && element.getClientRects().length > 0);
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!panel.contains(active)) {
+        event.preventDefault();
+        first.focus();
+    } else if (event.shiftKey && (active === first || active === panel)) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
 
 /** Display an alert or a yes/no confirmation in the custom dialog. */
 function showDialog(title, message, type = 'alert', callback = null) {
     document.getElementById('dialog-title').textContent = title;
     document.getElementById('dialog-msg').textContent = message;
 
+    const isConfirm = type === 'confirm';
     const cancelButton = document.getElementById('dialog-cancel');
-    if (type === 'confirm') {
-        cancelButton.classList.remove('hidden');
-        confirmCallback = typeof callback === 'function' ? callback : null;
-    } else {
-        cancelButton.classList.add('hidden');
-        confirmCallback = null;
-    }
+    cancelButton.hidden = !isConfirm;
+    confirmCallback = isConfirm && typeof callback === 'function' ? callback : null;
 
-    const modal = document.getElementById('dialog-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    // Confirmations open on "Cancel" so a stray Enter never deletes anything.
+    showModal(dialogModal(), isConfirm ? cancelButton : document.getElementById('dialog-ok'), { always: true });
 }
 
 /** Hide the custom dialog and discard any pending confirmation callback. */
 function closeDialog() {
-    const modal = document.getElementById('dialog-modal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    hideModal(dialogModal());
     confirmCallback = null;
 }
 
@@ -306,33 +348,40 @@ function bindUIEvents() {
     document.getElementById('json-upload').addEventListener('change', loadJSON);
     document.querySelector('[data-action="save-json"]').addEventListener('click', saveJSON);
     document.querySelector('[data-action="generate-pdf"]').addEventListener('click', generatePDF);
-    document.getElementById('btn-save').addEventListener('click', saveTask);
     document.getElementById('btn-delete').addEventListener('click', requestDeleteTask);
+
+    // The footer's Save button submits the form, so Enter in a text field saves too.
+    document.getElementById('task-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        saveTask();
+    });
 
     document.querySelectorAll('[data-action="close-modal"]').forEach((button) => {
         button.addEventListener('click', closeModal);
     });
 
-    document.querySelectorAll('[data-location]').forEach((button) => {
-        button.addEventListener('click', () => setLocation(button.dataset.location));
-    });
-
     // Event delegation keeps chip behaviour consistent for every chip.
+    document.getElementById('location-chips').addEventListener('click', (event) => {
+        const chip = event.target.closest('.chip');
+        if (!chip) return;
+        if (chip.dataset.location) setLocation(chip.dataset.location);
+        else chooseOtherLocation();
+    });
     document.getElementById('equipment-chips').addEventListener('click', (event) => {
         const chip = event.target.closest('.chip');
         if (chip) toggleEquipment(chip);
     });
-
-    // Difficulty cards support mouse, Enter and Space.
-    document.querySelectorAll('.diff-card').forEach((card) => {
-        card.addEventListener('click', () => setDifficulty(card.dataset.diff, card));
-        card.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                setDifficulty(card.dataset.diff, card);
-            }
-        });
+    document.querySelectorAll('.segment').forEach((segment) => {
+        segment.addEventListener('click', () => setDifficulty(segment.dataset.diff));
     });
+
+    // Typing clears an inline error; the title also keeps the preset highlight in sync.
+    document.getElementById('task-title').addEventListener('input', () => {
+        setFieldError('title', false);
+        syncPresetState();
+    });
+    document.getElementById('task-location').addEventListener('input', () => setFieldError('location', false));
+    document.getElementById('task-date').addEventListener('input', updateDateDisplay);
 }
 
 /** Register modal buttons once, after their elements exist. */
@@ -347,8 +396,32 @@ function bindDialogEvents() {
 }
 
 // ---------------------------------------------------------------------------
-// Presets and calendar
+// Chips, presets and calendar
 // ---------------------------------------------------------------------------
+
+/** Create a toggle chip button. */
+function createChip(label, attributes, small = false) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = small ? 'chip chip-sm' : 'chip';
+    chip.textContent = label;
+    Object.entries(attributes).forEach(([name, value]) => chip.setAttribute(name, value));
+    return chip;
+}
+
+/** Build the location and equipment chip groups of the task editor. */
+function buildChoiceChips() {
+    const locations = document.getElementById('location-chips');
+    LOCATIONS.forEach((location) => {
+        locations.appendChild(createChip(location, { 'data-location': location, 'aria-pressed': 'false' }));
+    });
+    locations.appendChild(createChip('Other', { 'data-location-other': '', 'aria-pressed': 'false' }));
+
+    const equipment = document.getElementById('equipment-chips');
+    EQUIPMENT.forEach((item) => {
+        equipment.appendChild(createChip(item, { 'data-value': item, 'data-selected': 'false', 'aria-pressed': 'false' }));
+    });
+}
 
 /** Build the quick-preset buttons from the task template data. */
 function buildPresetsUI() {
@@ -356,13 +429,21 @@ function buildPresetsUI() {
     container.replaceChildren();
 
     taskPresets.forEach((preset, index) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-md text-[11px] font-medium hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors shadow-sm';
-        button.textContent = preset.title;
-        button.addEventListener('click', () => loadPreset(index));
-        container.appendChild(button);
+        const chip = createChip(preset.title, { 'data-preset': index, 'aria-pressed': 'false' }, true);
+        chip.addEventListener('click', () => loadPreset(index));
+        container.appendChild(chip);
     });
+}
+
+/** Fade the calendar body in when the month or view changes (skipped for reduced motion). */
+function animateCalendarView() {
+    const harness = document.querySelector('#calendar .fc-view-harness');
+    if (!harness || !harness.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    harness.animate(
+        [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
+        { duration: parseFloat(token('--dur-slow')) || 480, easing: token('--ease') || 'ease-out' }
+    );
 }
 
 /** Create the FullCalendar instance and map its clicks to the task editor. */
@@ -373,13 +454,25 @@ function initCalendar() {
         initialDate: DEFAULT_START_DATE,
         initialView: 'dayGridMonth',
         headerToolbar: {
-            left: 'prev,next',
+            left: 'prev,next today',
             center: 'title',
             right: 'dayGridMonth,dayGridWeek'
         },
-        height: '100%',
+        buttonText: { today: 'Today', month: 'Month', week: 'Week' },
+        height: 'auto',
+        dayMaxEvents: 1,
+        moreLinkContent: (arg) => (window.matchMedia('(max-width: 640px)').matches ? `+${arg.num}` : `+${arg.num} more`),
+        views: { dayGridWeek: { dayMaxEvents: 3 } },
         firstDay: 1,
         selectable: true,
+
+        // Drag a task to another day to reschedule it (long-press on touch screens).
+        editable: true,
+        eventDurationEditable: false,
+        eventLongPressDelay: 400,
+        longPressDelay: 400,
+        dragRevertDuration: 200,
+        eventInteractive: true,
 
         dateClick(info) {
             openFormForDate(info.dateStr);
@@ -389,28 +482,47 @@ function initCalendar() {
             openFormForEvent(info.event);
         },
 
+        eventDragStart() {
+            calendarElement.classList.add('is-dragging');
+        },
+
+        eventDragStop() {
+            calendarElement.classList.remove('is-dragging');
+        },
+
+        eventDrop(info) {
+            updateBottomList();
+            const oldEvent = info.oldEvent;
+            showToast(`Moved to ${formatDateString(info.event.startStr.split('T')[0], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}`, {
+                label: 'Undo',
+                onClick() {
+                    const task = calendar.getEventById(info.event.id);
+                    if (!task) return;
+                    task.setDates(oldEvent.start, oldEvent.end, { allDay: oldEvent.allDay });
+                    updateBottomList();
+                    showToast('Move undone');
+                }
+            });
+        },
+
+        datesSet: animateCalendarView,
+
+        eventClassNames(argument) {
+            return [`event-${difficultyClass(argument.event.extendedProps.difficulty)}`];
+        },
+
         // Use escaped text for imported/user-created titles and locations.
         eventContent(argument) {
-            const difficulty = argument.event.extendedProps.difficulty || 'Moderate';
-            let badgeClass = 'event-moderate';
-            if (difficulty.includes('Easy')) badgeClass = 'event-easy';
-            else if (difficulty.includes('Strenuous')) badgeClass = 'event-strenuous';
-
+            const level = difficultyClass(argument.event.extendedProps.difficulty);
             const title = escapeHTML(argument.event.title);
             const location = escapeHTML(argument.event.extendedProps.location || 'TBD');
             return {
-                html: `
-                    <div class="fc-event-main-frame flex flex-col p-1 w-full overflow-hidden ${badgeClass}">
-                        <div class="font-semibold truncate text-[11px] leading-tight">${title}</div>
-                        <div class="truncate text-[10px] opacity-90 mt-0.5 flex items-center gap-1">
-                            <svg class="w-3 h-3 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                <circle cx="12" cy="10" r="3"></circle>
-                            </svg>
-                            ${location}
-                        </div>
-                    </div>`
+                html: `<div class="fc-event-content event-${level}"><span class="fc-event-title-custom">${title}</span><span class="fc-event-location">${location}</span></div>`
             };
+        },
+
+        eventDidMount(info) {
+            info.el.setAttribute('aria-label', `${info.event.title}, ${info.event.extendedProps.location || 'location to be confirmed'}, ${info.event.extendedProps.difficulty || 'Moderate'}`);
         }
     });
 
@@ -418,8 +530,76 @@ function initCalendar() {
 }
 
 // ---------------------------------------------------------------------------
+// Toast
+// ---------------------------------------------------------------------------
+
+let toastTimer = null;
+
+/** Show a short status message, optionally with one action button (e.g. Undo). */
+function showToast(message, action = null) {
+    const toast = document.getElementById('toast');
+    toast.textContent = '';
+    const text = document.createElement('span');
+    text.textContent = message;
+    toast.append(text);
+
+    if (action) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'toast-action';
+        button.textContent = action.label;
+        button.addEventListener('click', () => {
+            toast.hidden = true;
+            action.onClick();
+        });
+        toast.append(button);
+    }
+
+    toast.hidden = false;
+    // Re-trigger the entrance animation when a toast replaces another.
+    toast.style.animation = 'none';
+    void toast.offsetWidth;
+    toast.style.animation = '';
+    window.clearTimeout(toastTimer);
+    const hide = () => { toastTimer = window.setTimeout(() => { toast.hidden = true; }, action ? 8000 : 3600); };
+    hide();
+    // Keep an actionable toast open while it is hovered or focused.
+    toast.onmouseenter = toast.onfocusin = () => window.clearTimeout(toastTimer);
+    toast.onmouseleave = toast.onfocusout = hide;
+}
+
+// ---------------------------------------------------------------------------
 // Task directory grouped by location
 // ---------------------------------------------------------------------------
+
+/** Build the markup for one task card in the directory. */
+function taskCardMarkup(event) {
+    const dateText = event.start
+        ? event.start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+        : 'Date not set';
+    const difficulty = event.extendedProps.difficulty || 'Moderate';
+    const description = event.extendedProps.description || 'No description provided.';
+    const equipment = String(event.extendedProps.equipment || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    const equipmentMarkup = equipment.map((item) => `<span class="equipment-chip">${escapeHTML(item)}</span>`).join('');
+
+    return `
+        <article class="task-card">
+            <div class="task-date"><i data-lucide="calendar" aria-hidden="true"></i><span>${escapeHTML(dateText)}</span></div>
+            <div class="task-card-main">
+                <h4>${escapeHTML(event.title)}</h4>
+                <p class="task-card-description">${escapeHTML(description)}</p>
+                <div class="task-card-meta"><span class="difficulty-badge badge-${difficultyClass(difficulty)}">${escapeHTML(difficulty)}</span>${equipmentMarkup}</div>
+            </div>
+            <div class="task-card-actions">
+                <button type="button" class="button button-sm" data-edit-event-id="${escapeHTML(event.id)}" aria-label="Edit ${escapeHTML(event.title)}">
+                    <i data-lucide="pencil" aria-hidden="true"></i>Edit
+                </button>
+            </div>
+        </article>`;
+}
 
 /** Re-render the directory below the calendar, grouped by location and date. */
 function updateBottomList() {
@@ -428,9 +608,10 @@ function updateBottomList() {
 
     if (events.length === 0) {
         container.innerHTML = `
-            <p class="text-zinc-500 dark:text-zinc-400 italic bg-zinc-50 dark:bg-zinc-900 p-6 rounded-lg text-center border border-zinc-200 dark:border-zinc-800">
-                No tasks scheduled yet. Click on the calendar to start planning.
-            </p>`;
+            <div class="empty-state">
+                <span class="empty-icon"><i data-lucide="calendar-plus" aria-hidden="true"></i></span>
+                <p>No tasks yet. Select a date on the calendar to add one.</p>
+            </div>`;
         lucide.createIcons();
         return;
     }
@@ -443,74 +624,17 @@ function updateBottomList() {
         groupedTasks.get(location).push(event);
     });
 
-    let html = '';
-    [...groupedTasks.keys()].sort((a, b) => a.localeCompare(b)).forEach((location) => {
+    container.innerHTML = [...groupedTasks.keys()].sort((a, b) => a.localeCompare(b)).map((location) => {
         const locationEvents = groupedTasks.get(location).sort((a, b) => a.start - b.start);
-
-        html += `
-            <section class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden shadow-sm">
-                <div class="bg-zinc-50 dark:bg-zinc-900 px-5 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-2">
-                    <i data-lucide="map-pin" class="w-5 h-5 text-zinc-500 dark:text-zinc-400" aria-hidden="true"></i>
-                    <h3 class="font-bold text-lg text-zinc-900 dark:text-zinc-100">${escapeHTML(location)}</h3>
-                    <span class="ml-auto bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs py-1 px-2.5 rounded-full font-semibold">
-                        ${locationEvents.length} Task${locationEvents.length === 1 ? '' : 's'}
-                    </span>
-                </div>
-                <div class="divide-y divide-zinc-100 dark:divide-zinc-700">`;
-
-        locationEvents.forEach((event) => {
-            const dateText = event.start
-                ? event.start.toLocaleDateString('en-GB', {
-                    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
-                })
-                : 'Date not set';
-            const difficulty = event.extendedProps.difficulty || 'Moderate';
-            const description = event.extendedProps.description || 'No description provided.';
-            const equipmentText = event.extendedProps.equipment || '';
-            const equipment = equipmentText
-                .split(',')
-                .map((item) => item.trim())
-                .filter(Boolean);
-
-            const equipmentMarkup = equipment.length
-                ? equipment.map((item) => `
-                    <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-md border bg-zinc-100 text-zinc-800 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700">
-                        ${escapeHTML(item)}
-                    </span>`).join('')
-                : '<span class="text-xs text-zinc-400 dark:text-zinc-500 italic">None specified</span>';
-
-            html += `
-                <div class="p-5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-                    <div class="flex-1 space-y-1">
-                        <div class="flex items-center gap-3 flex-wrap">
-                            <h4 class="font-semibold text-zinc-900 dark:text-zinc-100">${escapeHTML(event.title)}</h4>
-                            <span class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border ${getDifficultyBadgeClasses(difficulty)}">
-                                ${escapeHTML(difficulty)}
-                            </span>
-                        </div>
-                        <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                            <i data-lucide="calendar" class="w-4 h-4" aria-hidden="true"></i>
-                            ${escapeHTML(dateText)}
-                        </div>
-                        <p class="text-sm text-zinc-600 dark:text-zinc-300 mt-2">${escapeHTML(description)}</p>
-                    </div>
-                    <div class="md:w-1/3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg p-3 border border-zinc-100 dark:border-zinc-800 self-stretch flex flex-col justify-center">
-                        <h5 class="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                            <i data-lucide="backpack" class="w-3.5 h-3.5" aria-hidden="true"></i> Equipment
-                        </h5>
-                        <div class="flex flex-wrap gap-1.5 mt-1">${equipmentMarkup}</div>
-                    </div>
-                    <button type="button" data-edit-event-id="${escapeHTML(event.id)}"
-                        class="text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 px-3 py-2 rounded-md transition-colors border border-zinc-200 dark:border-zinc-700 self-start md:self-center flex items-center gap-2 font-medium text-sm">
-                        <i data-lucide="edit-2" class="w-4 h-4" aria-hidden="true"></i> Edit
-                    </button>
-                </div>`;
-        });
-
-        html += '</div></section>';
-    });
-
-    container.innerHTML = html;
+        return `
+            <section class="location-group">
+                <header class="location-group-header">
+                    <div class="location-heading"><i data-lucide="map-pin" aria-hidden="true"></i><h3>${escapeHTML(location)}</h3></div>
+                    <span class="location-count">${locationEvents.length} ${locationEvents.length === 1 ? 'task' : 'tasks'}</span>
+                </header>
+                <div class="location-task-list">${locationEvents.map(taskCardMarkup).join('')}</div>
+            </section>`;
+    }).join('');
     lucide.createIcons();
 }
 
@@ -608,37 +732,68 @@ function loadJSON(event) {
 // Task editor and form state
 // ---------------------------------------------------------------------------
 
-/** Show the task editor modal. */
+/** Show the task editor; the title field gets focus first. */
 function openModal() {
-    const modal = document.getElementById('task-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    taskModal().querySelector('.modal-body').scrollTop = 0;
+    showModal(taskModal(), document.getElementById('task-title'));
 }
 
 /** Hide the task editor modal. */
 function closeModal() {
-    const modal = document.getElementById('task-modal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    hideModal(taskModal());
 }
 
-/** Set the location field from one of the suggested site pills. */
+/** Show or clear an inline validation message ('title' or 'location'). */
+function setFieldError(field, show) {
+    document.getElementById(`err-${field}`).hidden = !show;
+    const targets = field === 'title' ? ['task-title'] : ['task-location', 'location-chips'];
+    targets.forEach((id) => {
+        const element = document.getElementById(id);
+        if (show) element.setAttribute('aria-invalid', 'true');
+        else element.removeAttribute('aria-invalid');
+    });
+}
+
+/** Set a chip's selected state, exposed both as a data attribute and to assistive tech. */
+function setChipSelected(chip, selected) {
+    chip.dataset.selected = String(selected);
+    chip.setAttribute('aria-pressed', String(selected));
+}
+
+/** Reflect the location value in the chip group and the custom-location field. */
+function syncLocationUI() {
+    const input = document.getElementById('task-location');
+    const value = input.value.trim();
+    const isCustom = customLocation || (value !== '' && !LOCATIONS.includes(value));
+
+    document.querySelectorAll('#location-chips .chip').forEach((chip) => {
+        const selected = chip.dataset.location ? !isCustom && chip.dataset.location === value : isCustom;
+        chip.setAttribute('aria-pressed', String(selected));
+    });
+    input.hidden = !isCustom;
+}
+
+/** Choose one of the suggested sites. */
 function setLocation(location) {
     document.getElementById('task-location').value = location;
+    customLocation = false;
+    setFieldError('location', false);
+    syncLocationUI();
 }
 
-/** Toggle selected styling on a standard equipment chip. */
-function toggleEquipment(element) {
-    const isSelected = element.dataset.selected === 'true';
-    if (isSelected) {
-        element.classList.remove(...CHIP_ACTIVE);
-        element.classList.add(...CHIP_INACTIVE);
-        element.dataset.selected = 'false';
-    } else {
-        element.classList.add(...CHIP_ACTIVE);
-        element.classList.remove(...CHIP_INACTIVE);
-        element.dataset.selected = 'true';
-    }
+/** Switch to a custom location and focus its text field. */
+function chooseOtherLocation() {
+    const input = document.getElementById('task-location');
+    if (LOCATIONS.includes(input.value.trim())) input.value = '';
+    customLocation = true;
+    setFieldError('location', false);
+    syncLocationUI();
+    input.focus();
+}
+
+/** Toggle an equipment chip. */
+function toggleEquipment(chip) {
+    setChipSelected(chip, chip.dataset.selected !== 'true');
 }
 
 /** Return selected preset equipment plus any free-text equipment. */
@@ -655,64 +810,37 @@ function getSelectedEquipment() {
 /** Restore equipment chips and put non-preset equipment in the custom field. */
 function setEquipmentFromString(equipmentString) {
     const chips = Array.from(document.querySelectorAll('#equipment-chips .chip'));
-    chips.forEach((chip) => {
-        chip.classList.remove(...CHIP_ACTIVE);
-        chip.classList.add(...CHIP_INACTIVE);
-        chip.dataset.selected = 'false';
-    });
-    document.getElementById('task-equip-custom').value = '';
+    chips.forEach((chip) => setChipSelected(chip, false));
 
-    const items = String(equipmentString ?? '')
+    const customItems = [];
+    String(equipmentString ?? '')
         .split(',')
         .map((item) => item.trim())
-        .filter(Boolean);
-    const customItems = [];
-
-    items.forEach((item) => {
-        // Compare against data values rather than interpolating into a selector.
-        const chip = chips.find((candidate) => candidate.dataset.value === item);
-        if (chip) {
-            chip.classList.add(...CHIP_ACTIVE);
-            chip.classList.remove(...CHIP_INACTIVE);
-            chip.dataset.selected = 'true';
-        } else {
-            customItems.push(item);
-        }
-    });
+        .filter(Boolean)
+        .forEach((item) => {
+            // Compare against data values rather than interpolating into a selector.
+            const chip = chips.find((candidate) => candidate.dataset.value === item);
+            if (chip) setChipSelected(chip, true);
+            else customItems.push(item);
+        });
 
     document.getElementById('task-equip-custom').value = customItems.join(', ');
 }
 
-/** Mark a difficulty card as selected and update the hidden form value. */
-function setDifficulty(level, selectedElement = null) {
+/** Mark one difficulty segment as selected and update the hidden form value. */
+function setDifficulty(level) {
     document.getElementById('task-diff-value').value = level;
-
-    const neutralClasses = ['border-zinc-200', 'bg-white', 'dark:border-zinc-700', 'dark:bg-zinc-950'];
-    const selectedClasses = [
-        'border-green-400', 'bg-green-50', 'dark:bg-green-900/20', 'dark:border-green-700',
-        'border-yellow-400', 'bg-yellow-50', 'dark:bg-yellow-900/20', 'dark:border-yellow-700',
-        'border-red-400', 'bg-red-50', 'dark:bg-red-900/20', 'dark:border-red-700'
-    ];
-
-    document.querySelectorAll('.diff-card').forEach((card) => {
-        card.setAttribute('aria-pressed', 'false');
-        card.classList.remove(...selectedClasses);
-        card.classList.remove('border-zinc-200', 'dark:border-zinc-700');
-        card.classList.add(...neutralClasses);
+    document.querySelectorAll('.segment').forEach((segment) => {
+        segment.setAttribute('aria-pressed', String(segment.dataset.diff === level));
     });
+}
 
-    const card = selectedElement || document.querySelector(`.diff-card[data-diff="${level}"]`);
-    if (!card) return;
-
-    card.setAttribute('aria-pressed', 'true');
-    card.classList.remove(...neutralClasses);
-    if (level === 'Easy') {
-        card.classList.add('border-green-400', 'bg-green-50', 'dark:bg-green-900/20', 'dark:border-green-700');
-    } else if (level === 'Strenuous') {
-        card.classList.add('border-red-400', 'bg-red-50', 'dark:bg-red-900/20', 'dark:border-red-700');
-    } else {
-        card.classList.add('border-yellow-400', 'bg-yellow-50', 'dark:bg-yellow-900/20', 'dark:border-yellow-700');
-    }
+/** Highlight the preset chip that matches the current title, if any. */
+function syncPresetState() {
+    const title = document.getElementById('task-title').value.trim();
+    document.querySelectorAll('#presets-container .chip').forEach((chip) => {
+        chip.setAttribute('aria-pressed', String(taskPresets[Number(chip.dataset.preset)].title === title));
+    });
 }
 
 /** Populate the task editor using one of the task presets. */
@@ -724,6 +852,30 @@ function loadPreset(index) {
     document.getElementById('task-desc').value = preset.desc;
     setEquipmentFromString(preset.equip.join(', '));
     setDifficulty(preset.diff);
+    setFieldError('title', false);
+    syncPresetState();
+    document.getElementById('presets-details').open = false;
+    document.getElementById('task-title').focus();
+}
+
+/** Put the editor in "add" or "edit" mode. */
+function setEditorMode(isEditing) {
+    document.getElementById('form-title').textContent = isEditing ? 'Edit task' : 'Add task';
+    document.getElementById('btn-delete').hidden = !isEditing;
+}
+
+/** Show the chosen date in the editor header. */
+function showSelectedDate(dateString) {
+    document.getElementById('task-date').value = dateString;
+    updateDateDisplay();
+}
+
+/** Keep the screen-reader date description in step with the date field. */
+function updateDateDisplay() {
+    const dateString = document.getElementById('task-date').value;
+    document.getElementById('selected-date-display').textContent = parseLocalDate(dateString)
+        ? formatDateString(dateString, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        : '';
 }
 
 /** Clear all fields and return the editor to its new-task state. */
@@ -733,16 +885,17 @@ function resetForm() {
     document.getElementById('task-location').value = '';
     document.getElementById('task-title').value = '';
     document.getElementById('task-desc').value = '';
+    document.getElementById('selected-date-display').textContent = '';
 
+    customLocation = false;
     setEquipmentFromString('');
     setDifficulty('Moderate');
-
-    document.getElementById('selected-date-display').textContent = '';
-    document.getElementById('form-title').innerHTML =
-        '<i data-lucide="calendar-plus" class="w-5 h-5 text-zinc-500 dark:text-zinc-400"></i> Add New Task';
-    document.getElementById('btn-delete').classList.add('hidden');
-    document.getElementById('btn-delete').classList.remove('flex');
-    lucide.createIcons();
+    setFieldError('title', false);
+    setFieldError('location', false);
+    syncLocationUI();
+    syncPresetState();
+    setEditorMode(false);
+    document.getElementById('presets-details').open = false;
 }
 
 /** Open a blank task form for the date selected in the calendar. */
@@ -753,45 +906,31 @@ function openFormForDate(dateString) {
     }
 
     resetForm();
-    document.getElementById('task-date').value = dateString;
-    document.getElementById('selected-date-display').textContent = formatDateString(dateString, {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-    });
+    showSelectedDate(dateString);
     openModal();
 }
 
 /** Load a calendar event into the editor for modification or deletion. */
 function openFormForEvent(event) {
     resetForm();
-    document.getElementById('form-title').innerHTML =
-        '<i data-lucide="edit-3" class="w-5 h-5 text-zinc-500 dark:text-zinc-400"></i> Edit Scheduled Task';
-    lucide.createIcons();
-
-    document.getElementById('btn-delete').classList.remove('hidden');
-    document.getElementById('btn-delete').classList.add('flex');
+    setEditorMode(true);
     document.getElementById('task-id').value = event.id;
-
-    const dateString = event.startStr.split('T')[0];
-    document.getElementById('task-date').value = dateString;
-    document.getElementById('selected-date-display').textContent = formatDateString(dateString, {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-    });
+    showSelectedDate(event.startStr.split('T')[0]);
 
     document.getElementById('task-title').value = event.title;
     document.getElementById('task-location').value = event.extendedProps.location || '';
     document.getElementById('task-desc').value = event.extendedProps.description || '';
     setEquipmentFromString(event.extendedProps.equipment || '');
     setDifficulty(event.extendedProps.difficulty || 'Moderate');
+    syncLocationUI();
+    syncPresetState();
     openModal();
 }
 
 /** Open the editor for a task's ID selected from the directory. */
 function openFormFromList(eventId) {
     const event = calendar.getEventById(eventId);
-    if (!event) return;
-
-    openFormForEvent(event);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (event) openFormForEvent(event);
 }
 
 /** Validate the form and add a new event or update the selected event. */
@@ -809,8 +948,15 @@ function saveTask() {
     const difficulty = document.getElementById('task-diff-value').value || 'Moderate';
     const eventId = document.getElementById('task-id').value;
 
+    // Inline validation: show every problem, then focus the first one.
+    setFieldError('title', !title);
+    setFieldError('location', !location);
     if (!title || !location) {
-        showDialog('Required Fields', 'Task Title and Location are required.', 'alert');
+        const locationInput = document.getElementById('task-location');
+        const firstProblem = !title
+            ? document.getElementById('task-title')
+            : (locationInput.hidden ? document.querySelector('#location-chips .chip') : locationInput);
+        firstProblem.focus();
         return;
     }
 
