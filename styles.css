@@ -1,0 +1,193 @@
+/*
+ * Volunteer Plan 2027 — application styles
+ * Most layout and component styling uses Tailwind utility classes. This file
+ * contains global scrollbar rules and FullCalendar-specific overrides.
+ */
+
+/* Base Styles & Scrollbar */
+        body {
+            scrollbar-width: thin;
+            scrollbar-color: #a1a1aa transparent;
+        }
+
+        .dark body {
+            scrollbar-color: #52525b transparent;
+        }
+
+
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #a1a1aa;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #71717a;
+        }
+
+        .dark ::-webkit-scrollbar-thumb {
+            background: #52525b;
+        }
+
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #71717a;
+        }
+
+        /* Light Mode FullCalendar Overrides */
+        .fc {
+            --fc-page-bg-color: #ffffff;
+            --fc-neutral-bg-color: #fafafa;
+            --fc-neutral-text-color: #18181b;
+            /* zinc-900 */
+            --fc-border-color: #e4e4e7;
+            /* zinc-200 */
+
+            --fc-button-bg-color: #18181b;
+            --fc-button-border-color: #18181b;
+            --fc-button-hover-bg-color: #27272a;
+            --fc-button-hover-border-color: #27272a;
+            --fc-button-active-bg-color: #000000;
+            --fc-button-active-border-color: #000000;
+
+            --fc-today-bg-color: rgba(24, 24, 27, 0.05);
+            font-family: 'Inter', sans-serif;
+            --fc-event-bg-color: transparent;
+            --fc-event-border-color: transparent;
+            --fc-event-box-shadow: 0;
+        }
+
+        /* Dark Mode FullCalendar Overrides */
+        .dark .fc {
+            --fc-page-bg-color: #27272a;
+            /* zinc-800 */
+            --fc-neutral-bg-color: #18181b;
+            /* zinc-900 */
+            --fc-neutral-text-color: #f4f4f5;
+            /* zinc-100 */
+            --fc-border-color: #3f3f46;
+            /* zinc-700 */
+
+            --fc-button-bg-color: #3f3f46;
+            --fc-button-border-color: #3f3f46;
+            --fc-button-hover-bg-color: #52525b;
+            --fc-button-hover-border-color: #52525b;
+            --fc-button-active-bg-color: #71717a;
+            --fc-button-active-border-color: #71717a;
+
+            --fc-today-bg-color: rgba(255, 255, 255, 0.05);
+
+            --fc-event-bg-color: transparent;
+            --fc-event-border-color: transparent;
+            --fc-event-box-shadow: 0;
+        }
+
+        .fc-col-header-cell {
+            padding: 8px 0;
+            font-weight: 600;
+        }
+
+        .fc .fc-toolbar-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        @media (min-width: 768px) {
+            .fc .fc-toolbar-title {
+                font-size: 1.5rem;
+            }
+        }
+
+        .fc-daygrid-day-number {
+            font-weight: 500;
+            padding: 8px !important;
+        }
+
+        .fc-daygrid-day:hover {
+            background-color: rgba(161, 161, 170, 0.1);
+            cursor: pointer;
+        }
+
+        /* Event Badges */
+        .fc-event {
+            border: none;
+            border-radius: 4px;
+            padding: 3px 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            margin: 2px 4px;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+        }
+
+        .fc-event:hover {
+            transform: scale(1.02);
+            z-index: 10;
+        }
+
+        /* Difficulty Badge Classes for Calendar (Light & Dark safe) */
+        .event-easy {
+            background-color: #dcfce7;
+            color: #166534;
+            border-left: 3px solid #22c55e;
+        }
+
+        .event-moderate {
+            background-color: #fef3c7;
+            color: #92400e;
+            border-left: 3px solid #f59e0b;
+        }
+
+        .event-strenuous {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border-left: 3px solid #ef4444;
+        }
+
+        .dark .event-easy {
+            background-color: rgba(22, 101, 52, 0.3);
+            color: #86efac;
+            border-left-color: #4ade80;
+        }
+
+        .dark .event-moderate {
+            background-color: rgba(146, 64, 14, 0.3);
+            color: #fcd34d;
+            border-left-color: #fbbf24;
+        }
+
+        .dark .event-strenuous {
+            background-color: rgba(153, 27, 27, 0.3);
+            color: #fca5a5;
+            border-left-color: #f87171;
+        }
+
+        /* Form Interactive Elements */
+        .chip,
+        .pill,
+        .diff-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* Modal Overlay */
+        #task-modal,
+        #dialog-modal {
+            backdrop-filter: blur(4px);
+        }
+
+        /* Calendar explicit height for proper rendering */
+        .calendar-wrapper {
+            height: 700px;
+            min-height: 600px;
+        }
