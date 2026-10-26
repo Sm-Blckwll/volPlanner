@@ -1470,6 +1470,7 @@ function loadImage(source) {
 /**
  * Export the task schedule to a landscape PDF.
  * The required page_1.jpg image must load successfully as the first page.
+ * page_2.jpg (the site map) is added as page 2 when available, so tasks start on page 3.
  * Export is cancelled if the cover is missing or cannot be embedded.
  */
 async function generatePDF() {
@@ -1513,7 +1514,16 @@ async function generatePDF() {
         return;
     }
 
-    // Page 2 onward: a concise schedule table with a running header.
+    // Page 2 is the painted site map. It is optional: if it is missing the export carries on without it.
+    try {
+        const mapImage = await loadImage('./page_2.jpg');
+        doc.addPage('a4', 'landscape');
+        doc.addImage(mapImage, 'JPEG', 0, 0, pageWidth, pageHeight);
+    } catch (error) {
+        console.warn('Optional PDF map page (page_2.jpg) could not be loaded; continuing without it.', error);
+    }
+
+    // Task pages follow: a concise schedule table with a running header.
     if (typeof doc.autoTable !== 'function') {
         showDialog('PDF Table Plugin Missing', 'The PDF table plugin did not load. Check your internet connection and try again.', 'alert');
         return;
