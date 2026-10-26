@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Volunteer Plan 2027 · Planner</title>
+  <title>volPlanner Dashboard</title>
   <meta name="theme-color" content="#005a30">
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <!-- Leaflet + MapLibre GL (OpenFreeMap) for the parking and meeting-point map in the task editor; same libraries as the portal. -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
@@ -45,7 +47,7 @@
 
   <footer class="site-footer">
     <button class="text-toggle" id="theme-toggle-btn" type="button">Click to toggle dark mode</button>
-    <p class="app-stamp"><span id="app-version" data-stamp="version">v0.0.9✨</span><span class="app-stamp-sep" aria-hidden="true"> · </span><span id="app-updated" data-stamp="updated">Last updated: 26 Oct 2026, 17:25</span></p>
+    <p class="app-stamp"><span id="app-version" data-stamp="version">v0.0.10✨</span><span class="app-stamp-sep" aria-hidden="true"> · </span><span id="app-updated" data-stamp="updated">Last updated: 26 Oct 2026, 17:54</span></p>
   </footer>
 
   <!-- Task editor -->
@@ -54,7 +56,7 @@
       <header class="modal-header">
         <div>
           <h2 id="form-title">Add task</h2>
-          <label class="modal-sub date-field" for="task-date"><i data-lucide="calendar-days" aria-hidden="true"></i><span class="sr-only">Date</span><input class="input date-input" type="date" id="task-date" required></label>
+          <label class="modal-sub date-field" for="task-date"><span class="sr-only">Date</span><input class="input date-input" type="date" id="task-date" required></label>
           <p class="sr-only" id="selected-date-display"></p>
         </div>
         <button type="button" class="button button-quiet button-icon" data-action="close-modal" aria-label="Close"><i data-lucide="x"></i></button>
@@ -77,7 +79,7 @@
           </details>
           <div class="field">
             <label class="sr-only" for="task-desc">Description</label>
-            <textarea class="input" id="task-desc" rows="3" placeholder="Description (optional): what will volunteers be doing?"></textarea>
+            <textarea class="input" id="task-desc" rows="3" placeholder="Description: what will volunteers be doing?"></textarea>
           </div>
         </section>
 
@@ -126,7 +128,7 @@
           <span class="step-marker" aria-hidden="true"></span>
           <div class="step-head"><h3 id="step-bring">What to bring</h3><span class="req">Optional</span></div>
           <div id="equipment-chips" class="chip-group" role="group" aria-labelledby="step-bring"></div>
-          <input class="input" id="task-equip-custom" type="text" placeholder="Other equipment" aria-label="Other equipment" autocomplete="off">
+          <input class="input" id="task-equip-custom" type="text" placeholder="Other equipment, comma separated" aria-label="Other equipment, comma separated" autocomplete="off">
         </section>
       </div>
 

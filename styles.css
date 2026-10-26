@@ -32,7 +32,13 @@
 
 /* Date field in the task editor (keyboard route to rescheduling). ---------------- */
 .date-field { margin-top: var(--space-2); }
-.date-input { width: auto; min-height: 40px; padding: 0 var(--space-3); color: var(--text); font-size: var(--text-sm); color-scheme: light; }
+.date-field { display: inline-flex; max-width: 100%; }
+.date-input { box-sizing: border-box; width: 9em; max-width: 100%; min-width: 0; min-height: var(--control-h); padding: 0 var(--space-3); color: var(--text); color-scheme: light; }
+.date-input::-webkit-datetime-edit { padding: 0; }
+.date-input::-webkit-calendar-picker-indicator { margin-inline-start: var(--space-2); cursor: pointer; }
+/* One text size in every box of the task editor (the title's 18px, never under 16px so iOS does not zoom in). */
+.task-modal .input, .task-modal .date-input { font-size: var(--text-md); line-height: var(--leading-body); }
+.task-modal .input::placeholder { font-size: var(--text-md); }
 html.dark .date-input { color-scheme: dark; }
 
 /* Drag and drop rescheduling. ---------------------------------------------------- */
