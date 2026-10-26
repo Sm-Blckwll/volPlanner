@@ -1097,6 +1097,10 @@ function requestDeleteTask() {
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
 const MAP_ATTRIBUTION = '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+// Satellite option for choosing the parking and meeting point: Esri World Imagery raster tiles (free, no API key; attribution required).
+const SATELLITE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const SATELLITE_ATTRIBUTION = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
+const BASEMAP_STORAGE_KEY = 'planner-place-basemap';
 const MAP_START_VIEW = [50.93, -4.35]; // North Devon, used while there is no point to show
 
 let parkingDraft = null;   // { lat, lon } chosen by the manager, or null
@@ -1197,6 +1201,54 @@ function meetingIcon(label) {
     });
 }
 
+/**
+ * Map / Satellite switch. The imagery sits in its own tile pane above the vector map and below the markers, so switching
+ * only adds or removes that layer: pins, zoom and centre are never touched. The choice lasts for the browser session.
+ */
+function addBasemapToggle(map, host) {
+    map.createPane('satellite').style.zIndex = 450;
+    const imagery = L.tileLayer(SATELLITE_URL, { pane: 'satellite', maxNativeZoom: 19, maxZoom: 22, attribution: SATELLITE_ATTRIBUTION });
+    let saved = 'map';
+    try { saved = window.sessionStorage.getItem(BASEMAP_STORAGE_KEY) === 'satellite' ? 'satellite' : 'map'; } catch (error) { /* storage blocked: default map */ }
+
+    const Toggle = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd() {
+            const box = L.DomUtil.create('div', 'basemap-toggle');
+            box.setAttribute('role', 'group');
+            box.setAttribute('aria-label', 'Map style');
+            [['map', 'Map'], ['satellite', 'Satellite']].forEach(([value, text]) => {
+                const button = L.DomUtil.create('button', 'basemap-btn', box);
+                button.type = 'button';
+                button.dataset.base = value;
+                button.textContent = text;
+                button.setAttribute('aria-pressed', 'false');
+            });
+            L.DomEvent.disableClickPropagation(box);
+            L.DomEvent.disableScrollPropagation(box);
+            box.addEventListener('click', (event) => {
+                const button = event.target.closest('.basemap-btn');
+                if (button) apply(button.dataset.base, true);
+            });
+            return box;
+        }
+    });
+    const control = new Toggle().addTo(map);
+
+    function apply(mode, remember) {
+        const satellite = mode === 'satellite';
+        if (satellite) imagery.addTo(map); else map.removeLayer(imagery);
+        host.classList.toggle('is-satellite', satellite);
+        control.getContainer().querySelectorAll('.basemap-btn').forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.base === mode));
+        });
+        if (remember) {
+            try { window.sessionStorage.setItem(BASEMAP_STORAGE_KEY, mode); } catch (error) { /* ignore */ }
+        }
+    }
+    apply(saved, false);
+}
+
 /** Create the map the first time it is needed (the panel must already be visible). */
 function createPlaceMap() {
     const host = document.getElementById('meeting-map');
@@ -1212,6 +1264,7 @@ function createPlaceMap() {
         }).setView(MAP_START_VIEW, 10, { animate: false });
         L.maplibreGL({ style: MAP_STYLE_URL, attribution: MAP_ATTRIBUTION }).addTo(map);
         L.control.attribution({ prefix: false }).addTo(map);
+        addBasemapToggle(map, host);
         // Click (or tap) anywhere to put the chosen place there.
         map.on('click', (event) => setPlacePoint(activeMode(), event.latlng));
         // Keyboard route: Enter puts the chosen place at the centre of the map.
