@@ -44,27 +44,41 @@ html .fc .fc-highlight { background: var(--brand-tint); box-shadow: inset 0 0 0 
 .is-dragging .fc-daygrid-day:hover { background-color: transparent; }
 .is-dragging .fc-daygrid-event:hover { transform: none; box-shadow: none; }
 
-/* Meeting point in the "Where is it?" step. -------------------------------------- */
+/* Parking and meeting point in the "Where is it?" step. -------------------------------------- */
 .meeting { display: grid; gap: var(--space-2); }
 .meeting-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-2); margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
-.meeting-line > svg { width: 16px; height: 16px; flex: none; color: var(--brand-text); }
+.meeting-line > svg, .task-card-meet > svg { width: 16px; height: 16px; flex: none; color: var(--brand-text); }
+.meeting-line > svg { margin-inline: 2px; }
 .meeting-line strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
 /* Text-link buttons: a 44px touch area without making the quiet line taller. */
 .meeting-link { justify-self: start; margin-block: calc(var(--space-3) * -1); padding: var(--space-3) var(--space-2); color: var(--brand-text); background: none; border: 0; border-radius: var(--radius); font: inherit; font-size: var(--text-sm); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .meeting-link:hover { text-decoration-thickness: 2px; }
 .meeting-line .meeting-link { margin-inline-start: var(--space-1); }
-.meeting-panel { display: grid; gap: var(--space-3); padding: var(--space-3); background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); animation: rise var(--dur) var(--ease); }
+.meeting-panel { display: grid; gap: var(--space-3); margin-top: var(--space-1); animation: rise var(--dur) var(--ease); }
 .meeting-hint, .meeting-keys { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
 .meeting-keys { display: none; font-size: var(--text-xs); }
 .meeting-map:focus-visible + .meeting-keys { display: block; }
-.meeting-map { isolation: isolate; height: 220px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.meeting-map { isolation: isolate; height: 250px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .meeting-map:focus-visible { outline: 2px solid var(--brand-text); outline-offset: 2px; }
 .meeting-map .map-placeholder { display: grid; place-items: center; height: 100%; padding: var(--space-4); color: var(--text-muted); font-size: var(--text-sm); text-align: center; }
-/* The pin: a brand-coloured circle with a white ring (no marker image files). */
-.meeting-pin { display: block; width: 28px; height: 28px; background: var(--brand); border: 4px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), var(--shadow-2); cursor: grab; }
-.meeting-pin-wrap:focus-visible .meeting-pin { outline: 2px solid var(--brand-text); outline-offset: 3px; }
-.meeting-pin-wrap:active .meeting-pin { cursor: grabbing; }
-/* Quiet "Meet at" line on directory cards (only for a non-default meeting point). */
+/* Map markers: parking = blue dashed see-through circle with a P; meeting = the green pin (no marker image files). */
+.map-icon { background: none; border: 0; }
+.map-parking { display: grid; place-items: center; box-sizing: border-box; width: 36px; height: 36px; color: var(--map-parking-ink); background: var(--map-parking-fill); border: 2px dashed var(--map-parking); border-radius: var(--radius-full); box-shadow: 0 0 0 1px var(--map-halo); font: 700 18px/1 var(--font-body); text-shadow: 0 0 3px var(--map-halo), 0 0 3px var(--map-halo); }
+.map-pin-meet { display: block; position: relative; box-sizing: border-box; width: 36px; height: 36px; background: var(--brand); border: 3px solid #fff; border-radius: 50% 50% 50% 0; box-shadow: var(--shadow-2); transform: rotate(-45deg); }
+.map-pin-meet::after { content: ""; position: absolute; inset: 0; margin: auto; width: 10px; height: 10px; background: #fff; border-radius: var(--radius-full); }
+.map-icon.leaflet-interactive { cursor: grab; }
+.map-icon.leaflet-interactive:active { cursor: grabbing; }
+.map-icon:focus-visible .map-parking, .map-icon:focus-visible .map-pin-meet { outline: 2px solid #212121; outline-offset: 3px; }
+/* The same two symbols, small, for the lines and tabs on the page. */
+.place-badge { display: inline-grid; place-items: center; box-sizing: border-box; width: 20px; height: 20px; flex: none; color: var(--map-parking-text); background: var(--map-parking-fill); border: 2px dashed var(--map-parking); border-radius: var(--radius-full); font: 700 11px/1 var(--font-body); }
+.place-badge-sm { width: 18px; height: 18px; font-size: 10px; }
+.place-pin { display: inline-block; width: 12px; height: 12px; flex: none; background: var(--brand); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
+.place-note { color: var(--text-muted); font-weight: 400; }
+.place-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.place-tab { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: var(--control-h); padding: 0 var(--space-3); color: var(--text-muted); background: none; border: 0; border-radius: var(--radius); font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.place-tab:hover { background: var(--brand-tint); }
+.place-tab[aria-pressed="true"] { color: var(--text); background: var(--brand-tint); box-shadow: inset 0 0 0 2px var(--brand-text); }
+/* Quiet "Park at" / "Meet at" lines on directory cards (only for a non-default point). */
 .task-card-meet { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
 .task-card-meet svg { width: 16px; height: 16px; flex: none; color: var(--brand-text); }
 .meeting-map .leaflet-tile-pane { filter: var(--map-filter); }

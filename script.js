@@ -8,8 +8,8 @@
  *   4. Export the schedule as a PDF.
  *
  * Third-party libraries (FullCalendar, jsPDF, AutoTable, Lucide, and Leaflet with MapLibre GL
- * for the meeting-point map) are loaded by index.html. locations.js (shared with the portal)
- * holds each site's default meeting point. All UI actions are wired from this file; the HTML
+ * for the parking and meeting-point map) are loaded by index.html. locations.js (shared with the portal)
+ * holds each site's carpark (where volunteers park) and any default meeting point. All UI actions are wired from this file; the HTML
  * contains no inline JavaScript event handlers.
  */
 
@@ -88,13 +88,18 @@ const DEFAULT_START_DATE = '2027-01-01';
 
 /**
  * Suggested sites and equipment shown as chips in the task editor.
- * Site names must match locations.js (default meeting points) and existing tasks exactly.
+ * Site names must match locations.js (carparks and default meeting points) and existing tasks exactly.
  */
 const LOCATIONS = [
     'Brownsham', 'Peppercombe', 'East Titchberry', 'Dunsland', 'Bucks Mills', 'Abbotsham',
     'Burrough Farm', 'Kipling Tors', 'Brixton Barton', 'Welcombe'
 ];
-const EQUIPMENT = ['Sturdy boots', 'Waterproofs', 'Packed lunch', 'Wellies', 'Cake', 'Scythe'];
+// Clothing and footwear first, then food and drink, then kit. Anything saved that is not listed here
+// (for example an older task with 'Scythe') still loads, shows on the task and is kept in the "Other equipment" field.
+const EQUIPMENT = [
+    'Sturdy boots', 'Wellies', 'Waterproofs', 'Long trousers', 'Sun hat',
+    'Packed lunch', 'Bowl and utensils', 'Mug', 'Cake', 'Binoculars'
+];
 
 let calendar;
 let confirmCallback = null;
@@ -153,12 +158,18 @@ function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => replacements[character]);
 }
 
-/** Label used for a dropped pin that has no name (same default as locations.js). */
+/** Labels used for a dropped pin that has no name (same defaults as locations.js). */
 const DEFAULT_MEETING_LABEL = (window.VOL_MEETING && window.VOL_MEETING.DEFAULT_LABEL) || 'Meeting point';
+const DEFAULT_PARKING_LABEL = (window.VOL_MEETING && window.VOL_MEETING.DEFAULT_PARKING_LABEL) || 'Parking';
 
 /** Validate a stored meeting point { label, lat, lon }; returns a clean copy or null. */
 function cleanMeeting(raw) {
     return window.VOL_MEETING ? window.VOL_MEETING.clean(raw) : null;
+}
+
+/** Validate a stored parking point { label, lat, lon }; returns a clean copy or null. */
+function cleanParking(raw) {
+    return window.VOL_MEETING ? window.VOL_MEETING.cleanParking(raw) : null;
 }
 
 /** Build a local Date from YYYY-MM-DD without UTC/time-zone date shifts. */
@@ -196,7 +207,7 @@ function createTaskId() {
 /** Return the difficulty as a CSS modifier: easy, moderate or strenuous. */
 function difficultyClass(difficulty) {
     if (String(difficulty).includes('Easy')) return 'easy';
-    if (String(difficulty).includes('Strenuous')) return 'strenuous';
+    if (/Strenuous|Hard/i.test(String(difficulty))) return 'strenuous';
     return 'moderate';
 }
 
@@ -220,7 +231,8 @@ function normaliseImportedEvent(event, index) {
         ? event.extendedProps
         : {};
 
-    // The optional meeting point is kept as-is (validated); an invalid one is dropped.
+    // The optional parking and meeting points are kept as-is (validated); an invalid one is dropped.
+    const parking = cleanParking(props.parking);
     const meeting = cleanMeeting(props.meeting);
 
     return {
@@ -235,6 +247,7 @@ function normaliseImportedEvent(event, index) {
             difficulty: ['Easy', 'Moderate', 'Strenuous'].includes(String(props.difficulty))
                 ? String(props.difficulty)
                 : 'Moderate',
+            ...(parking ? { parking } : {}),
             ...(meeting ? { meeting } : {})
         }
     };
@@ -600,17 +613,24 @@ function taskCardMarkup(event) {
     const dateText = event.start
         ? event.start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
         : 'Date not set';
-    const difficulty = event.extendedProps.difficulty || 'Moderate';
+    const difficulty = String(event.extendedProps.difficulty || '').trim();
     const description = event.extendedProps.description || 'No description provided.';
     const equipment = String(event.extendedProps.equipment || '')
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean);
     const equipmentMarkup = equipment.map((item) => `<span class="equipment-chip">${escapeHTML(item)}</span>`).join('');
-    // A quiet line only when the manager chose a meeting point other than the site's carpark.
+    // Quiet lines only when the manager chose a parking or meeting point other than the site's defaults.
+    const parking = cleanParking(event.extendedProps.parking);
     const meeting = cleanMeeting(event.extendedProps.meeting);
-    const meetingMarkup = meeting
-        ? `<p class="task-card-meet"><i data-lucide="map-pin" aria-hidden="true"></i><span>Meet at: ${escapeHTML(meeting.label)}</span></p>`
+    const meetingMarkup = [
+        parking ? `<p class="task-card-meet"><span class="place-badge place-badge-sm" aria-hidden="true">P</span><span>Park at: ${escapeHTML(parking.label)}</span></p>` : '',
+        meeting ? `<p class="task-card-meet"><i data-lucide="map-pin" aria-hidden="true"></i><span>Meet at: ${escapeHTML(meeting.label)}</span></p>` : ''
+    ].join('');
+
+    // A thin bar along the bottom edge is a rough guide to difficulty; no difficulty, no bar.
+    const difficultyBar = difficulty
+        ? `<span class="task-card-bar bar-${difficultyClass(difficulty)}" role="img" aria-label="Difficulty: ${escapeHTML(difficulty)}" title="Difficulty: ${escapeHTML(difficulty)}"></span>`
         : '';
 
     return `
@@ -620,13 +640,14 @@ function taskCardMarkup(event) {
                 <h4>${escapeHTML(event.title)}</h4>
                 <p class="task-card-description">${escapeHTML(description)}</p>
                 ${meetingMarkup}
-                <div class="task-card-meta"><span class="difficulty-badge badge-${difficultyClass(difficulty)}">${escapeHTML(difficulty)}</span>${equipmentMarkup}</div>
+                ${equipmentMarkup ? `<div class="task-card-meta">${equipmentMarkup}</div>` : ''}
             </div>
             <div class="task-card-actions">
                 <button type="button" class="button button-sm" data-edit-event-id="${escapeHTML(event.id)}" aria-label="Edit ${escapeHTML(event.title)}">
                     <i data-lucide="pencil" aria-hidden="true"></i>Edit
                 </button>
             </div>
+            ${difficultyBar}
         </article>`;
 }
 
@@ -684,7 +705,8 @@ function bindDirectoryEvents() {
 /** Download all tasks as a portable JSON file. */
 function saveJSON() {
     const events = calendar.getEvents().map((event) => {
-        // `meeting` is optional: only tasks with a non-default meeting point carry it.
+        // `parking` and `meeting` are optional: only tasks with a non-default point carry them.
+        const parking = cleanParking(event.extendedProps.parking);
         const meeting = cleanMeeting(event.extendedProps.meeting);
         return {
             id: event.id,
@@ -696,6 +718,7 @@ function saveJSON() {
                 description: event.extendedProps.description || '',
                 equipment: event.extendedProps.equipment || '',
                 difficulty: event.extendedProps.difficulty || 'Moderate',
+                ...(parking ? { parking } : {}),
                 ...(meeting ? { meeting } : {})
             }
         };
@@ -805,16 +828,16 @@ function syncLocationUI() {
         chip.setAttribute('aria-pressed', String(selected));
     });
     input.hidden = !isCustom;
-    updateMeetingUI();
+    updatePlacesUI();
 }
 
-/** Choose one of the suggested sites. A different site starts again from its own default meeting point. */
+/** Choose one of the suggested sites. A different site starts again from its own carpark and default meeting point. */
 function setLocation(location) {
     const input = document.getElementById('task-location');
     const unchanged = !customLocation && input.value.trim() === location;
     input.value = location;
     customLocation = false;
-    if (!unchanged) resetMeeting();
+    if (!unchanged) resetPlaces();
     setFieldError('location', false);
     syncLocationUI();
 }
@@ -823,7 +846,7 @@ function setLocation(location) {
 function chooseOtherLocation() {
     const input = document.getElementById('task-location');
     if (LOCATIONS.includes(input.value.trim())) input.value = '';
-    if (!customLocation) resetMeeting();
+    if (!customLocation) resetPlaces();
     customLocation = true;
     setFieldError('location', false);
     syncLocationUI();
@@ -927,7 +950,7 @@ function resetForm() {
     document.getElementById('selected-date-display').textContent = '';
 
     customLocation = false;
-    resetMeeting();
+    resetPlaces();
     setEquipmentFromString('');
     setDifficulty('Moderate');
     setFieldError('title', false);
@@ -962,11 +985,16 @@ function openFormForEvent(event) {
     document.getElementById('task-desc').value = event.extendedProps.description || '';
     setEquipmentFromString(event.extendedProps.equipment || '');
     setDifficulty(event.extendedProps.difficulty || 'Moderate');
-    // Restore the saved meeting point (none saved = the site's default).
-    const saved = cleanMeeting(event.extendedProps.meeting);
-    if (saved) {
-        meetingDraft = { lat: saved.lat, lon: saved.lon };
-        document.getElementById('meeting-name').value = saved.label === DEFAULT_MEETING_LABEL ? '' : saved.label;
+    // Restore the saved parking and meeting points (none saved = the site's defaults).
+    const savedParking = cleanParking(event.extendedProps.parking);
+    if (savedParking) {
+        parkingDraft = { lat: savedParking.lat, lon: savedParking.lon };
+        parkingName = savedParking.label === DEFAULT_PARKING_LABEL ? '' : savedParking.label;
+    }
+    const savedMeeting = cleanMeeting(event.extendedProps.meeting);
+    if (savedMeeting) {
+        meetingDraft = { lat: savedMeeting.lat, lon: savedMeeting.lon };
+        meetingName = savedMeeting.label === DEFAULT_MEETING_LABEL ? '' : savedMeeting.label;
     }
     syncLocationUI();
     syncPresetState();
@@ -993,7 +1021,8 @@ function saveTask() {
     const equipment = getSelectedEquipment();
     const difficulty = document.getElementById('task-diff-value').value || 'Moderate';
     const eventId = document.getElementById('task-id').value;
-    // Only a non-default meeting point is stored; null leaves the field out of the data.
+    // Only non-default points are stored; null leaves the field out of the data.
+    const parking = parkingToSave();
     const meeting = meetingToSave();
 
     // Inline validation: show every problem, then focus the first one.
@@ -1022,6 +1051,7 @@ function saveTask() {
         existingEvent.setExtendedProp('description', description);
         existingEvent.setExtendedProp('equipment', equipment);
         existingEvent.setExtendedProp('difficulty', difficulty);
+        existingEvent.setExtendedProp('parking', parking);
         existingEvent.setExtendedProp('meeting', meeting);
     } else {
         calendar.addEvent({
@@ -1029,7 +1059,7 @@ function saveTask() {
             title,
             start: dateString,
             allDay: true,
-            extendedProps: { location, description, equipment, difficulty, ...(meeting ? { meeting } : {}) }
+            extendedProps: { location, description, equipment, difficulty, ...(parking ? { parking } : {}), ...(meeting ? { meeting } : {}) }
         });
     }
 
@@ -1056,27 +1086,34 @@ function requestDeleteTask() {
 }
 
 // ---------------------------------------------------------------------------
-// Meeting point (the site's default carpark, or a pin dropped by the manager)
+// Parking and meeting point
 // ---------------------------------------------------------------------------
 //
-// Each preset site has a default meeting point in locations.js, so a task needs no extra step.
-// Only when the manager picks somewhere else is `extendedProps.meeting = { label, lat, lon }` saved.
-// `meetingDraft` holds that chosen point (null = use the site's default); the name field holds its label.
+// "Where is it?" is the place volunteers PARK. Each preset site has a carpark in locations.js, so a task needs
+// no extra step. The meeting point is separate and defaults to the parking (Peppercombe: the top gate).
+// Only a value that differs from its default is stored: extendedProps.parking / extendedProps.meeting = { label, lat, lon }.
+// For a custom ('Other') location the manager can drop a parking pin, which is then always stored.
+// parkingDraft / meetingDraft hold chosen points (null = use the default); the names hold their labels.
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
 const MAP_ATTRIBUTION = '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 const MAP_START_VIEW = [50.93, -4.35]; // North Devon, used while there is no point to show
 
+let parkingDraft = null;   // { lat, lon } chosen by the manager, or null
 let meetingDraft = null;   // { lat, lon } chosen by the manager, or null
-let meetingOpen = false;   // is the "Change" panel expanded? (always open for sites without a carpark)
-let meetingMap = null;     // Leaflet map, created the first time the panel is opened
+let parkingName = '';
+let meetingName = '';
+let placeMode = null;      // which place the open panel edits: 'parking', 'meeting' or null (closed; custom locations are always open)
+let placeMap = null;       // Leaflet map, created the first time the panel is opened
+let parkingMarker = null;
 let meetingMarker = null;
 
 /** The preset site the form is set to, or null for 'Other' (or nothing chosen yet). */
 function activeSite() {
     const value = document.getElementById('task-location').value.trim();
-    if (customLocation || !LOCATIONS.includes(value) || !window.VOL_MEETING) return null;
-    return window.VOL_MEETING.siteFor(value);
+    const places = window.VOL_PLACES || window.VOL_MEETING;
+    if (customLocation || !LOCATIONS.includes(value) || !places) return null;
+    return places.siteFor(value);
 }
 
 /** Has the manager chosen a location yet (a site chip, or 'Other')? */
@@ -1086,157 +1123,283 @@ function hasLocationChoice() {
 
 const sameSpot = (a, b) => Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
 
+/** Which place the panel is editing right now. */
+const activeMode = () => placeMode || 'parking';
+
+/** Is the map panel open? Presets open it on request; a custom location always shows it. */
+const isPanelOpen = () => (activeSite() ? placeMode !== null : true);
+
 /**
- * Where the task meets right now: { label, lat, lon, custom } or null (no pin and no default).
- * A pin left exactly on the carpark with no name is still just the default.
+ * Where volunteers park right now: { label, lat, lon, custom } or null (a custom location with no pin yet).
+ * A pin left exactly on the carpark with no new name is still just the default.
  */
-function currentMeeting() {
+function currentParking() {
     const site = activeSite();
-    const fallback = site && site.meeting ? site.meeting : null;
-    const name = document.getElementById('meeting-name').value.trim();
+    const fallback = site ? site.parking : null;
+    const name = parkingName.trim();
+    if (!parkingDraft) return fallback ? { ...fallback, custom: false } : null;
+    if (fallback && sameSpot(parkingDraft, fallback) && (!name || name === fallback.label)) return { ...fallback, custom: false };
+    return { label: name || DEFAULT_PARKING_LABEL, lat: parkingDraft.lat, lon: parkingDraft.lon, custom: true };
+}
+
+/** The meeting point when none is chosen: the site's own (Peppercombe top gate), else the parking. */
+function defaultMeeting() {
+    const site = activeSite();
+    if (site && site.meeting) return { ...site.meeting };
+    const parking = currentParking();
+    return parking ? { label: parking.label, lat: parking.lat, lon: parking.lon } : null;
+}
+
+/** Where the task meets right now: { label, lat, lon, custom } or null (no pin and no default). */
+function currentMeeting() {
+    const fallback = defaultMeeting();
+    const name = meetingName.trim();
     if (!meetingDraft) return fallback ? { ...fallback, custom: false } : null;
-    if (fallback && sameSpot(meetingDraft, fallback) && !name) return { ...fallback, custom: false };
+    if (fallback && sameSpot(meetingDraft, fallback) && (!name || name === fallback.label)) return { ...fallback, custom: false };
     return { label: name || DEFAULT_MEETING_LABEL, lat: meetingDraft.lat, lon: meetingDraft.lon, custom: true };
 }
 
-/** The value to store on the task: only a non-default point, rounded to ~0.1 m. */
-function meetingToSave() {
-    const meeting = currentMeeting();
-    if (!meeting || !meeting.custom) return null;
-    return { label: meeting.label, lat: Number(meeting.lat.toFixed(6)), lon: Number(meeting.lon.toFixed(6)) };
+/** The value to store: only a non-default point, rounded to ~0.1 m. */
+function pointToSave(point) {
+    if (!point || !point.custom) return null;
+    return { label: point.label, lat: Number(point.lat.toFixed(6)), lon: Number(point.lon.toFixed(6)) };
 }
+const parkingToSave = () => pointToSave(currentParking());
+const meetingToSave = () => pointToSave(currentMeeting());
 
-/** Forget any chosen point and close the panel (new task, new site, or "Use carpark instead"). */
-function resetMeeting() {
+/** Forget any chosen points and close the panel (new task or new site). */
+function resetPlaces() {
+    parkingDraft = null;
     meetingDraft = null;
-    meetingOpen = false;
+    parkingName = '';
+    meetingName = '';
+    placeMode = null;
     document.getElementById('meeting-name').value = '';
 }
 
-/** Draw the pin marker: a plain circle in the brand colour, so no image files are needed. */
-function meetingMarkerIcon() {
-    return L.divIcon({ className: 'meeting-pin-wrap', html: '<span class="meeting-pin"></span>', iconSize: [28, 28], iconAnchor: [14, 14] });
+/** Parking marker: a blue, dashed, see-through circle with a P (a fixed 36px, so it never scales with the map). */
+function parkingIcon(label) {
+    return L.divIcon({
+        className: 'map-icon',
+        html: `<span class="map-parking" role="img" aria-label="Parking: ${escapeHTML(label)}">P</span>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+    });
+}
+
+/** Meeting marker: the green pin. Its tip is always exactly on its point, so on the parking spot the tip sits at the centre of the P circle. */
+function meetingIcon(label) {
+    return L.divIcon({
+        className: 'map-icon',
+        html: `<span class="map-pin-meet" role="img" aria-label="Meeting point: ${escapeHTML(label)}"></span>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 43.5]
+    });
 }
 
 /** Create the map the first time it is needed (the panel must already be visible). */
-function createMeetingMap() {
+function createPlaceMap() {
     const host = document.getElementById('meeting-map');
     if (!window.L || !window.L.maplibreGL) {
-        host.innerHTML = '<div class="map-placeholder">The map could not load. Check your connection; the default meeting point will still be used.</div>';
+        host.innerHTML = '<div class="map-placeholder">The map could not load. Check your connection; the default parking and meeting point will still be used.</div>';
         return null;
     }
     const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     try {
         const map = L.map(host, {
-            scrollWheelZoom: false, attributionControl: false,
+            scrollWheelZoom: true, attributionControl: false,
             zoomAnimation: !calm, fadeAnimation: !calm, markerZoomAnimation: !calm, inertia: !calm
         }).setView(MAP_START_VIEW, 10, { animate: false });
         L.maplibreGL({ style: MAP_STYLE_URL, attribution: MAP_ATTRIBUTION }).addTo(map);
         L.control.attribution({ prefix: false }).addTo(map);
-        // Click (or tap) anywhere to put the pin there.
-        map.on('click', (event) => setMeetingPoint(event.latlng));
-        // Keyboard route: Enter puts the pin at the centre of the map.
+        // Click (or tap) anywhere to put the chosen place there.
+        map.on('click', (event) => setPlacePoint(activeMode(), event.latlng));
+        // Keyboard route: Enter puts the chosen place at the centre of the map.
         host.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' && event.target === host) {
                 event.preventDefault();
-                setMeetingPoint(map.getCenter());
+                setPlacePoint(activeMode(), map.getCenter());
             }
         });
         return map;
     } catch (error) {
-        console.warn('Meeting map could not start:', error);
-        host.innerHTML = '<div class="map-placeholder">The map could not start in this browser. The default meeting point will still be used.</div>';
+        console.warn('Map could not start:', error);
+        host.innerHTML = '<div class="map-placeholder">The map could not start in this browser. The default parking and meeting point will still be used.</div>';
         return null;
     }
 }
 
-/** Show the current point on the map (recentring only when asked, so clicks do not make it jump). */
-function showMeetingOnMap(meeting, recenter) {
-    if (!meetingMap) meetingMap = createMeetingMap();
-    if (!meetingMap) return;
-    if (!meeting) {
-        if (meetingMarker) { meetingMarker.remove(); meetingMarker = null; }
-        if (recenter) meetingMap.setView(MAP_START_VIEW, 10, { animate: false });
-    } else {
-        const latlng = [meeting.lat, meeting.lon];
-        if (!meetingMarker) {
-            meetingMarker = L.marker(latlng, { icon: meetingMarkerIcon(), draggable: true, title: 'Meeting point (drag to move)' }).addTo(meetingMap);
-            meetingMarker.on('dragend', () => setMeetingPoint(meetingMarker.getLatLng()));
-        } else {
-            meetingMarker.setLatLng(latlng);
-        }
-        if (recenter) meetingMap.setView(latlng, 15, { animate: false });
+/** Redraw both markers; only the place being edited can be moved, so clicks never hit the other one. */
+function drawPlaceMarkers() {
+    [parkingMarker, meetingMarker].forEach((marker) => { if (marker) marker.remove(); });
+    parkingMarker = null;
+    meetingMarker = null;
+    const parking = currentParking();
+    const meeting = currentMeeting();
+    const mode = activeMode();
+    if (parking) {
+        const editable = mode === 'parking';
+        parkingMarker = L.marker([parking.lat, parking.lon], {
+            icon: parkingIcon(parking.label), interactive: editable, draggable: editable, keyboard: editable,
+            title: `Parking: ${parking.label}${editable ? ' (drag to move)' : ''}`
+        }).addTo(placeMap);
+        if (editable) parkingMarker.on('dragend', () => setPlacePoint('parking', parkingMarker.getLatLng()));
     }
+    if (meeting) {
+        const editable = mode === 'meeting';
+        meetingMarker = L.marker([meeting.lat, meeting.lon], {
+            icon: meetingIcon(meeting.label), interactive: editable, draggable: editable, keyboard: editable,
+            zIndexOffset: 1000, title: `Meeting point: ${meeting.label}${editable ? ' (drag to move)' : ''}`
+        }).addTo(placeMap);
+        if (editable) meetingMarker.on('dragend', () => setPlacePoint('meeting', meetingMarker.getLatLng()));
+    }
+}
+
+/** Show the current points on the map (fitting both when they differ, only when asked, so clicks do not make it jump). */
+function showPlacesOnMap(recenter) {
+    if (!placeMap) placeMap = createPlaceMap();
+    if (!placeMap) return;
+    drawPlaceMarkers();
+    const points = [currentParking(), currentMeeting()].filter(Boolean);
+    const fit = () => {
+        if (!placeMap || !recenter) return;
+        if (!points.length) {
+            placeMap.setView(MAP_START_VIEW, 10, { animate: false });
+        } else if (points.length === 2 && !sameSpot(points[0], points[1])) {
+            placeMap.fitBounds(L.latLngBounds(points.map((point) => [point.lat, point.lon])), { padding: [56, 56], maxZoom: 16, animate: false });
+        } else {
+            placeMap.setView([points[0].lat, points[0].lon], 15, { animate: false });
+        }
+    };
+    fit();
     // The dialog animates in and the panel was hidden, so re-measure once it has settled.
-    [60, 520].forEach((delay) => window.setTimeout(() => { if (meetingMap) meetingMap.invalidateSize(); }, delay));
+    [60, 520].forEach((delay) => window.setTimeout(() => {
+        if (!placeMap) return;
+        placeMap.invalidateSize();
+        fit();
+    }, delay));
 }
 
-/** The manager clicked the map, dragged the pin or pressed Enter on the map. */
-function setMeetingPoint(latlng) {
-    meetingDraft = { lat: latlng.lat, lon: latlng.lng };
-    updateMeetingUI({ recenter: false });
+/** The manager clicked the map, dragged a marker or pressed Enter on the map. */
+function setPlacePoint(kind, latlng) {
+    const point = { lat: latlng.lat, lon: latlng.lng };
+    if (kind === 'parking') {
+        // A meeting point that was simply following the parking keeps following it.
+        const followed = meetingDraft && !currentMeeting().custom;
+        parkingDraft = point;
+        if (followed) meetingDraft = null;
+    } else {
+        meetingDraft = point;
+    }
+    updatePlacesUI({ recenter: false });
 }
 
-/** Bring the "Meeting point" line, the panel and the map in step with the current location and point. */
-function updateMeetingUI({ recenter = true } = {}) {
+/** Bring the "Park at" and "Meet at" lines, the panel and the map in step with the current location and points. */
+function updatePlacesUI({ recenter = true } = {}) {
     const block = document.getElementById('meeting');
     const chosen = hasLocationChoice();
     block.hidden = !chosen;
     if (!chosen) return;
 
     const site = activeSite();
-    const hasDefault = Boolean(site && site.meeting);
+    const parking = currentParking();
     const meeting = currentMeeting();
-    const name = document.getElementById('meeting-name').value.trim();
-    const open = hasDefault ? meetingOpen : true;
+    const mode = activeMode();
+    const open = isPanelOpen();
 
-    // Quiet line (only for sites with a carpark): "Meeting point: Brownsham carpark   Change"
-    document.getElementById('meeting-line').hidden = !hasDefault;
-    if (hasDefault) {
-        document.getElementById('meeting-label').textContent = meeting.custom ? (name || 'Pin dropped on the map') : meeting.label;
-    }
-    const change = document.getElementById('meeting-change');
-    change.setAttribute('aria-expanded', String(open));
+    // Quiet lines: "Park at: Brownsham carpark   Change parking" and "Meet at: Brownsham carpark   Change meeting point"
+    document.getElementById('parking-label').textContent = parking
+        ? (parking.custom ? (parkingName.trim() || 'Pin dropped on the map') : parking.label)
+        : 'Not set yet (optional)';
+    const followsParking = Boolean(meeting && !meeting.custom && parking && sameSpot(meeting, parking));
+    document.getElementById('meeting-label').textContent = followsParking
+        ? document.getElementById('parking-label').textContent
+        : (meeting ? (meeting.custom ? (meetingName.trim() || 'Pin dropped on the map') : meeting.label) : 'Same as parking');
+    const parkingChange = document.getElementById('parking-change');
+    const meetingChange = document.getElementById('meeting-change');
+    parkingChange.textContent = parking ? (parking.custom || !site ? 'Move parking' : 'Change parking') : 'Set parking';
+    meetingChange.textContent = 'Change meeting point';
+    parkingChange.setAttribute('aria-expanded', String(open && mode === 'parking'));
+    meetingChange.setAttribute('aria-expanded', String(open && mode === 'meeting'));
 
-    // Panel: map, optional name, and a way back to the default.
+    // Panel: which place, a hint, the map, an optional name, and a way back to the default.
     document.getElementById('meeting-panel').hidden = !open;
-    document.getElementById('meeting-hint').textContent = hasDefault
-        ? 'Click the map or drag the pin to move the meeting point.'
-        : (meeting ? 'Click the map or drag the pin to move the meeting point.' : 'Drop a pin for the meeting point (optional).');
-    document.getElementById('meeting-name-field').hidden = !meeting;
-    const reset = document.getElementById('meeting-reset');
-    reset.textContent = hasDefault ? 'Use carpark instead' : 'Remove pin';
-    reset.hidden = hasDefault ? false : !meeting;
+    document.querySelectorAll('#place-tabs .place-tab').forEach((tab) => {
+        tab.setAttribute('aria-pressed', String(tab.dataset.place === mode));
+    });
+    const point = mode === 'parking' ? parking : meeting;
+    const hint = document.getElementById('meeting-hint');
+    if (mode === 'parking') {
+        hint.textContent = point ? 'Click the map or drag the P to move where volunteers park.' : 'Click the map to drop a pin where volunteers park (optional).';
+    } else {
+        hint.textContent = point ? 'Click the map or drag the green pin to move the meeting point.' : 'Click the map to drop a pin for the meeting point (optional).';
+    }
+    document.getElementById('meeting-name-field').hidden = !point;
+    const nameInput = document.getElementById('meeting-name');
+    const wanted = mode === 'parking' ? parkingName : meetingName;
+    if (nameInput.value !== wanted) nameInput.value = wanted;
+    nameInput.placeholder = mode === 'parking' ? 'Name the parking (e.g. Layby on the lane)' : 'Name this spot (e.g. Gate by the church)';
+    document.querySelector('label[for="meeting-name"]').textContent = mode === 'parking' ? 'Name the parking' : 'Name the meeting point';
 
-    if (open) showMeetingOnMap(meeting, recenter);
+    const reset = document.getElementById('meeting-reset');
+    const fallback = mode === 'parking' ? (site ? site.parking : null) : defaultMeeting();
+    const hasDraft = mode === 'parking' ? Boolean(parkingDraft) : Boolean(meetingDraft);
+    reset.textContent = fallback ? `Use ${fallback.label} instead` : 'Remove pin';
+    reset.hidden = !hasDraft;
+
+    if (open) showPlacesOnMap(recenter);
 }
 
-/** Wire the Change, name and reset controls once. */
+/** Open (or, for presets, close) the map panel for one of the two places. */
+function togglePlacePanel(kind) {
+    placeMode = activeSite() && placeMode === kind ? null : kind;
+    updatePlacesUI();
+    // Bring the freshly opened map into view inside the scrolling dialog.
+    if (placeMode) {
+        const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.setTimeout(() => document.getElementById('meeting-panel').scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' }), 80);
+    }
+}
+
+/** Wire the change links, place tabs, name and reset controls once. */
 function bindMeetingEvents() {
-    document.getElementById('meeting-change').addEventListener('click', () => {
-        meetingOpen = !meetingOpen;
-        updateMeetingUI();
-        // Bring the freshly opened map into view inside the scrolling dialog.
-        if (meetingOpen) {
-            const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            window.setTimeout(() => document.getElementById('meeting-panel').scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' }), 80);
-        }
+    document.getElementById('parking-change').addEventListener('click', () => togglePlacePanel('parking'));
+    document.getElementById('meeting-change').addEventListener('click', () => togglePlacePanel('meeting'));
+    document.querySelectorAll('#place-tabs .place-tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+            placeMode = tab.dataset.place;
+            updatePlacesUI();
+        });
     });
     document.getElementById('meeting-reset').addEventListener('click', () => {
-        resetMeeting();
-        updateMeetingUI();
-        if (activeSite()?.meeting) document.getElementById('meeting-change').focus();
-    });
-    // Naming the spot keeps the pin where it is (starting from the carpark if it has not moved).
-    document.getElementById('meeting-name').addEventListener('input', () => {
-        if (!meetingDraft) {
-            const point = currentMeeting();
-            if (point) meetingDraft = { lat: point.lat, lon: point.lon };
+        const mode = activeMode();
+        if (mode === 'parking') {
+            const followed = meetingDraft && !currentMeeting().custom;
+            parkingDraft = null;
+            parkingName = '';
+            if (followed) meetingDraft = null;
+        } else {
+            meetingDraft = null;
+            meetingName = '';
         }
-        updateMeetingUI({ recenter: false });
+        updatePlacesUI();
+        if (activeSite()) document.getElementById(mode === 'parking' ? 'parking-change' : 'meeting-change').focus();
+    });
+    // Naming the spot keeps the pin where it is (starting from the default if it has not moved).
+    document.getElementById('meeting-name').addEventListener('input', (event) => {
+        const mode = activeMode();
+        const point = mode === 'parking' ? currentParking() : currentMeeting();
+        if (!point) return;
+        if (mode === 'parking') {
+            if (!parkingDraft) parkingDraft = { lat: point.lat, lon: point.lon };
+            parkingName = event.target.value;
+        } else {
+            if (!meetingDraft) meetingDraft = { lat: point.lat, lon: point.lon };
+            meetingName = event.target.value;
+        }
+        updatePlacesUI({ recenter: false });
     });
 }
-
 // ---------------------------------------------------------------------------
 // PDF export
 // ---------------------------------------------------------------------------

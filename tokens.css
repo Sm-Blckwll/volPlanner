@@ -76,6 +76,7 @@
   --easy-bg: #e6f4ec;     --easy-text: #0a4d28;     --easy-edge: #2f8f5b;
   --moderate-bg: #fbf1d9; --moderate-text: #5a3d0b; --moderate-edge: #c28a1e;
   --strenuous-bg: #fbe9e4; --strenuous-text: #7a2415; --strenuous-edge: #b8452d;
+  --bar-easy: #2f9e5f;  --bar-moderate: #e8920c;  --bar-strenuous: #d23a2c;   /* task card difficulty bar */
   --danger: #b3261e;
   --danger-bg: #fdecea;
 
@@ -84,6 +85,12 @@
   --shadow-2: 0 6px 16px rgba(33, 33, 33, .12), 0 1px 3px rgba(33, 33, 33, .08);
   --shadow-3: 0 24px 48px rgba(33, 33, 33, .28);
   --scrim: rgba(33, 33, 33, .6);
+  /* Map markers: parking is a see-through blue circle with a dashed border and a P; the meeting point is the brand-green pin. */
+  --map-parking: #1a73e8;
+  --map-parking-fill: rgba(26, 115, 232, .25);
+  --map-parking-ink: #0b57d0;       /* the P on the map (the map stays light, even in the dark theme) */
+  --map-parking-text: #0b57d0;      /* the P badge on the page itself */
+  --map-halo: rgba(255, 255, 255, .85);
   --map-filter: grayscale(.25);
 
   /* Motion ----------------------------------------------------------------- */
@@ -105,6 +112,7 @@
 
 html.dark {
   color-scheme: dark;
+  --map-parking-text: #8ab4f8;
   --brand: #4cc38a;
   --brand-hover: #6fd6a3;
   --brand-text: #4cc38a;
@@ -133,6 +141,7 @@ html.dark {
   --easy-bg: #1d3a2a;     --easy-text: #bfe8cf;     --easy-edge: #4cc38a;
   --moderate-bg: #3d3216; --moderate-text: #f6dd9c; --moderate-edge: #e0b04a;
   --strenuous-bg: #4a2219; --strenuous-text: #fbcfc2; --strenuous-edge: #f2937d;
+  --bar-easy: #4cc38a;  --bar-moderate: #f0a43a;  --bar-strenuous: #f2705f;
   --danger: #ff8a80;
   --danger-bg: #4a2220;
 

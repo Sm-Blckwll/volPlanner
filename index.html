@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Volunteer Plan 2027 · Planner</title>
   <meta name="theme-color" content="#005a30">
-  <!-- Leaflet + MapLibre GL (OpenFreeMap) for the meeting-point map in the task editor; same libraries as the portal. -->
+  <!-- Leaflet + MapLibre GL (OpenFreeMap) for the parking and meeting-point map in the task editor; same libraries as the portal. -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="./tokens.css">
@@ -86,13 +86,19 @@
           <div class="field">
             <div id="location-chips" class="chip-group" role="group" aria-labelledby="step-where"></div>
             <input class="input" id="task-location" type="text" placeholder="Enter a location" aria-label="Custom location" autocomplete="off" aria-describedby="err-location" hidden>
-            <!-- Meeting point: the site's carpark by default; "Change" (or a site without a carpark) shows the map. -->
+            <!-- Parking (where volunteers park) and the meeting point. Both start from the site, so the default needs no
+                 extra step; the small map opens only to change one of them. -->
             <div class="meeting" id="meeting" hidden>
-              <p class="meeting-line" id="meeting-line"><i data-lucide="map-pin" aria-hidden="true"></i><span>Meeting point: <strong id="meeting-label"></strong></span><button type="button" class="meeting-link" id="meeting-change" aria-expanded="false" aria-controls="meeting-panel">Change</button></p>
+              <p class="meeting-line" id="parking-line"><span class="place-badge" aria-hidden="true">P</span><span>Park at: <strong id="parking-label"></strong></span><button type="button" class="meeting-link" id="parking-change" aria-expanded="false" aria-controls="meeting-panel">Change parking</button></p>
+              <p class="meeting-line" id="meeting-line"><i data-lucide="map-pin" aria-hidden="true"></i><span>Meet at: <strong id="meeting-label"></strong></span><button type="button" class="meeting-link" id="meeting-change" aria-expanded="false" aria-controls="meeting-panel">Change meeting point</button></p>
               <div class="meeting-panel" id="meeting-panel" hidden>
+                <div class="place-tabs" id="place-tabs" role="group" aria-label="Which place to set on the map">
+                  <button type="button" class="place-tab" data-place="parking" aria-pressed="true"><span class="place-badge place-badge-sm" aria-hidden="true">P</span>Parking</button>
+                  <button type="button" class="place-tab" data-place="meeting" aria-pressed="false"><i class="place-pin" aria-hidden="true"></i>Meeting point</button>
+                </div>
                 <p class="meeting-hint" id="meeting-hint"></p>
-                <div class="meeting-map" id="meeting-map" role="application" aria-label="Map for choosing the meeting point" aria-describedby="meeting-keys"></div>
-                <p class="meeting-keys" id="meeting-keys">Keyboard: pan the map with the arrow keys, then press Enter to put the pin in the centre.</p>
+                <div class="meeting-map" id="meeting-map" role="application" aria-label="Map for choosing the parking and meeting point" aria-describedby="meeting-keys"></div>
+                <p class="meeting-keys" id="meeting-keys">Keyboard: pan the map with the arrow keys, then press Enter to put the chosen place in the centre.</p>
                 <div class="field" id="meeting-name-field">
                   <label class="sr-only" for="meeting-name">Name this spot</label>
                   <input class="input" id="meeting-name" type="text" placeholder="Name this spot (e.g. Gate by the church)" maxlength="60" autocomplete="off">
