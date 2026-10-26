@@ -7,8 +7,9 @@
  *   3. Import/export the task list as JSON.
  *   4. Export the schedule as a PDF.
  *
- * Third-party libraries (FullCalendar, jsPDF, AutoTable and Lucide)
- * are loaded by index.html. All UI actions are wired from this file; the HTML
+ * Third-party libraries (FullCalendar, jsPDF, AutoTable, Lucide, and Leaflet with MapLibre GL
+ * for the meeting-point map) are loaded by index.html. locations.js (shared with the portal)
+ * holds each site's default meeting point. All UI actions are wired from this file; the HTML
  * contains no inline JavaScript event handlers.
  */
 
@@ -85,8 +86,14 @@ const taskPresets = [
 /** The app opens on the start of the 2027 planning year. */
 const DEFAULT_START_DATE = '2027-01-01';
 
-/** Suggested sites and equipment shown as chips in the task editor. */
-const LOCATIONS = ['Brownsham', 'Peppercombe', 'East Titchberry', 'Dunsland', 'Explorer Days'];
+/**
+ * Suggested sites and equipment shown as chips in the task editor.
+ * Site names must match locations.js (default meeting points) and existing tasks exactly.
+ */
+const LOCATIONS = [
+    'Brownsham', 'Peppercombe', 'East Titchberry', 'Dunsland', 'Bucks Mills', 'Abbotsham',
+    'Burrough Farm', 'Kipling Tors', 'Brixton Barton', 'Welcombe'
+];
 const EQUIPMENT = ['Sturdy boots', 'Waterproofs', 'Packed lunch', 'Wellies', 'Cake', 'Scythe'];
 
 let calendar;
@@ -144,6 +151,14 @@ function escapeHTML(value) {
         "'": '&#39;'
     };
     return String(value ?? '').replace(/[&<>"']/g, (character) => replacements[character]);
+}
+
+/** Label used for a dropped pin that has no name (same default as locations.js). */
+const DEFAULT_MEETING_LABEL = (window.VOL_MEETING && window.VOL_MEETING.DEFAULT_LABEL) || 'Meeting point';
+
+/** Validate a stored meeting point { label, lat, lon }; returns a clean copy or null. */
+function cleanMeeting(raw) {
+    return window.VOL_MEETING ? window.VOL_MEETING.clean(raw) : null;
 }
 
 /** Build a local Date from YYYY-MM-DD without UTC/time-zone date shifts. */
@@ -205,6 +220,9 @@ function normaliseImportedEvent(event, index) {
         ? event.extendedProps
         : {};
 
+    // The optional meeting point is kept as-is (validated); an invalid one is dropped.
+    const meeting = cleanMeeting(props.meeting);
+
     return {
         id: String(event.id || createTaskId()),
         title,
@@ -216,7 +234,8 @@ function normaliseImportedEvent(event, index) {
             equipment: String(props.equipment ?? ''),
             difficulty: ['Easy', 'Moderate', 'Strenuous'].includes(String(props.difficulty))
                 ? String(props.difficulty)
-                : 'Moderate'
+                : 'Moderate',
+            ...(meeting ? { meeting } : {})
         }
     };
 }
@@ -225,31 +244,38 @@ function normaliseImportedEvent(event, index) {
 // Theme handling
 // ---------------------------------------------------------------------------
 
-/** Apply the saved theme, or follow the browser preference on first visit. */
+/** Follow the device's light/dark setting unless the user has picked a theme with the footer link. */
 function initTheme() {
-    let savedTheme = null;
-    try {
-        savedTheme = localStorage.getItem('theme');
-    } catch (error) {
-        // Some browser privacy settings disable storage; the app still works.
-    }
-
-    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    document.documentElement.classList.toggle(
-        'dark',
-        savedTheme === 'dark' || (savedTheme === null && prefersDark)
-    );
-    updateThemeIcon();
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const readSaved = () => {
+        try { return localStorage.getItem('theme'); } catch (error) { return null; }
+    };
+    const apply = (isDark) => {
+        document.documentElement.classList.toggle('dark', Boolean(isDark));
+        updateThemeIcon();
+    };
+    const saved = readSaved();
+    apply(saved ? saved === 'dark' : media?.matches);
+    media?.addEventListener?.('change', (event) => {
+        if (!readSaved()) {
+            fadeThemeChange();
+            apply(event.matches);
+        }
+    });
 }
 
-/** Switch between light and dark mode (with a brief colour cross-fade) and persist the choice. */
-function toggleDarkMode() {
+/** Cross-fade colours briefly while the theme switches (CSS: html.theme-fade). */
+function fadeThemeChange() {
     const root = document.documentElement;
     root.classList.add('theme-fade');
-    window.clearTimeout(toggleDarkMode.timer);
-    toggleDarkMode.timer = window.setTimeout(() => root.classList.remove('theme-fade'), 400);
+    window.clearTimeout(fadeThemeChange.timer);
+    fadeThemeChange.timer = window.setTimeout(() => root.classList.remove('theme-fade'), 400);
+}
 
-    const isDark = root.classList.toggle('dark');
+/** Switch between light and dark mode and remember the choice. */
+function toggleDarkMode() {
+    fadeThemeChange();
+    const isDark = document.documentElement.classList.toggle('dark');
     try {
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
     } catch (error) {
@@ -258,17 +284,13 @@ function toggleDarkMode() {
     updateThemeIcon();
 }
 
-/** Update the theme button icon and label to match the current mode. */
+/** Keep the footer link's wording in step with the current mode. */
 function updateThemeIcon() {
     const button = document.getElementById('theme-toggle-btn');
     if (!button) return;
-
     const isDark = document.documentElement.classList.contains('dark');
-    button.innerHTML = `<i data-lucide="${isDark ? 'sun' : 'moon'}"></i>`;
-    button.setAttribute('aria-label', isDark ? 'Switch to light theme' : 'Switch to dark theme');
-    lucide.createIcons();
+    button.textContent = isDark ? 'Click to toggle light mode' : 'Click to toggle dark mode';
 }
-
 // ---------------------------------------------------------------------------
 // Modal helpers (shared by the task editor and the alert/confirm dialog)
 // ---------------------------------------------------------------------------
@@ -382,6 +404,7 @@ function bindUIEvents() {
     });
     document.getElementById('task-location').addEventListener('input', () => setFieldError('location', false));
     document.getElementById('task-date').addEventListener('input', updateDateDisplay);
+    bindMeetingEvents();
 }
 
 /** Register modal buttons once, after their elements exist. */
@@ -584,6 +607,11 @@ function taskCardMarkup(event) {
         .map((item) => item.trim())
         .filter(Boolean);
     const equipmentMarkup = equipment.map((item) => `<span class="equipment-chip">${escapeHTML(item)}</span>`).join('');
+    // A quiet line only when the manager chose a meeting point other than the site's carpark.
+    const meeting = cleanMeeting(event.extendedProps.meeting);
+    const meetingMarkup = meeting
+        ? `<p class="task-card-meet"><i data-lucide="map-pin" aria-hidden="true"></i><span>Meet at: ${escapeHTML(meeting.label)}</span></p>`
+        : '';
 
     return `
         <article class="task-card">
@@ -591,6 +619,7 @@ function taskCardMarkup(event) {
             <div class="task-card-main">
                 <h4>${escapeHTML(event.title)}</h4>
                 <p class="task-card-description">${escapeHTML(description)}</p>
+                ${meetingMarkup}
                 <div class="task-card-meta"><span class="difficulty-badge badge-${difficultyClass(difficulty)}">${escapeHTML(difficulty)}</span>${equipmentMarkup}</div>
             </div>
             <div class="task-card-actions">
@@ -654,18 +683,23 @@ function bindDirectoryEvents() {
 
 /** Download all tasks as a portable JSON file. */
 function saveJSON() {
-    const events = calendar.getEvents().map((event) => ({
-        id: event.id,
-        title: event.title,
-        start: event.startStr.split('T')[0],
-        allDay: true,
-        extendedProps: {
-            location: event.extendedProps.location || '',
-            description: event.extendedProps.description || '',
-            equipment: event.extendedProps.equipment || '',
-            difficulty: event.extendedProps.difficulty || 'Moderate'
-        }
-    }));
+    const events = calendar.getEvents().map((event) => {
+        // `meeting` is optional: only tasks with a non-default meeting point carry it.
+        const meeting = cleanMeeting(event.extendedProps.meeting);
+        return {
+            id: event.id,
+            title: event.title,
+            start: event.startStr.split('T')[0],
+            allDay: true,
+            extendedProps: {
+                location: event.extendedProps.location || '',
+                description: event.extendedProps.description || '',
+                equipment: event.extendedProps.equipment || '',
+                difficulty: event.extendedProps.difficulty || 'Moderate',
+                ...(meeting ? { meeting } : {})
+            }
+        };
+    });
 
     if (events.length === 0) {
         showDialog('Empty Calendar', 'There are no tasks to save.', 'alert');
@@ -771,12 +805,16 @@ function syncLocationUI() {
         chip.setAttribute('aria-pressed', String(selected));
     });
     input.hidden = !isCustom;
+    updateMeetingUI();
 }
 
-/** Choose one of the suggested sites. */
+/** Choose one of the suggested sites. A different site starts again from its own default meeting point. */
 function setLocation(location) {
-    document.getElementById('task-location').value = location;
+    const input = document.getElementById('task-location');
+    const unchanged = !customLocation && input.value.trim() === location;
+    input.value = location;
     customLocation = false;
+    if (!unchanged) resetMeeting();
     setFieldError('location', false);
     syncLocationUI();
 }
@@ -785,6 +823,7 @@ function setLocation(location) {
 function chooseOtherLocation() {
     const input = document.getElementById('task-location');
     if (LOCATIONS.includes(input.value.trim())) input.value = '';
+    if (!customLocation) resetMeeting();
     customLocation = true;
     setFieldError('location', false);
     syncLocationUI();
@@ -888,6 +927,7 @@ function resetForm() {
     document.getElementById('selected-date-display').textContent = '';
 
     customLocation = false;
+    resetMeeting();
     setEquipmentFromString('');
     setDifficulty('Moderate');
     setFieldError('title', false);
@@ -922,6 +962,12 @@ function openFormForEvent(event) {
     document.getElementById('task-desc').value = event.extendedProps.description || '';
     setEquipmentFromString(event.extendedProps.equipment || '');
     setDifficulty(event.extendedProps.difficulty || 'Moderate');
+    // Restore the saved meeting point (none saved = the site's default).
+    const saved = cleanMeeting(event.extendedProps.meeting);
+    if (saved) {
+        meetingDraft = { lat: saved.lat, lon: saved.lon };
+        document.getElementById('meeting-name').value = saved.label === DEFAULT_MEETING_LABEL ? '' : saved.label;
+    }
     syncLocationUI();
     syncPresetState();
     openModal();
@@ -947,6 +993,8 @@ function saveTask() {
     const equipment = getSelectedEquipment();
     const difficulty = document.getElementById('task-diff-value').value || 'Moderate';
     const eventId = document.getElementById('task-id').value;
+    // Only a non-default meeting point is stored; null leaves the field out of the data.
+    const meeting = meetingToSave();
 
     // Inline validation: show every problem, then focus the first one.
     setFieldError('title', !title);
@@ -974,13 +1022,14 @@ function saveTask() {
         existingEvent.setExtendedProp('description', description);
         existingEvent.setExtendedProp('equipment', equipment);
         existingEvent.setExtendedProp('difficulty', difficulty);
+        existingEvent.setExtendedProp('meeting', meeting);
     } else {
         calendar.addEvent({
             id: createTaskId(),
             title,
             start: dateString,
             allDay: true,
-            extendedProps: { location, description, equipment, difficulty }
+            extendedProps: { location, description, equipment, difficulty, ...(meeting ? { meeting } : {}) }
         });
     }
 
@@ -1004,6 +1053,188 @@ function requestDeleteTask() {
             closeModal();
         }
     );
+}
+
+// ---------------------------------------------------------------------------
+// Meeting point (the site's default carpark, or a pin dropped by the manager)
+// ---------------------------------------------------------------------------
+//
+// Each preset site has a default meeting point in locations.js, so a task needs no extra step.
+// Only when the manager picks somewhere else is `extendedProps.meeting = { label, lat, lon }` saved.
+// `meetingDraft` holds that chosen point (null = use the site's default); the name field holds its label.
+
+const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
+const MAP_ATTRIBUTION = '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const MAP_START_VIEW = [50.93, -4.35]; // North Devon, used while there is no point to show
+
+let meetingDraft = null;   // { lat, lon } chosen by the manager, or null
+let meetingOpen = false;   // is the "Change" panel expanded? (always open for sites without a carpark)
+let meetingMap = null;     // Leaflet map, created the first time the panel is opened
+let meetingMarker = null;
+
+/** The preset site the form is set to, or null for 'Other' (or nothing chosen yet). */
+function activeSite() {
+    const value = document.getElementById('task-location').value.trim();
+    if (customLocation || !LOCATIONS.includes(value) || !window.VOL_MEETING) return null;
+    return window.VOL_MEETING.siteFor(value);
+}
+
+/** Has the manager chosen a location yet (a site chip, or 'Other')? */
+function hasLocationChoice() {
+    return customLocation || document.getElementById('task-location').value.trim() !== '';
+}
+
+const sameSpot = (a, b) => Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
+
+/**
+ * Where the task meets right now: { label, lat, lon, custom } or null (no pin and no default).
+ * A pin left exactly on the carpark with no name is still just the default.
+ */
+function currentMeeting() {
+    const site = activeSite();
+    const fallback = site && site.meeting ? site.meeting : null;
+    const name = document.getElementById('meeting-name').value.trim();
+    if (!meetingDraft) return fallback ? { ...fallback, custom: false } : null;
+    if (fallback && sameSpot(meetingDraft, fallback) && !name) return { ...fallback, custom: false };
+    return { label: name || DEFAULT_MEETING_LABEL, lat: meetingDraft.lat, lon: meetingDraft.lon, custom: true };
+}
+
+/** The value to store on the task: only a non-default point, rounded to ~0.1 m. */
+function meetingToSave() {
+    const meeting = currentMeeting();
+    if (!meeting || !meeting.custom) return null;
+    return { label: meeting.label, lat: Number(meeting.lat.toFixed(6)), lon: Number(meeting.lon.toFixed(6)) };
+}
+
+/** Forget any chosen point and close the panel (new task, new site, or "Use carpark instead"). */
+function resetMeeting() {
+    meetingDraft = null;
+    meetingOpen = false;
+    document.getElementById('meeting-name').value = '';
+}
+
+/** Draw the pin marker: a plain circle in the brand colour, so no image files are needed. */
+function meetingMarkerIcon() {
+    return L.divIcon({ className: 'meeting-pin-wrap', html: '<span class="meeting-pin"></span>', iconSize: [28, 28], iconAnchor: [14, 14] });
+}
+
+/** Create the map the first time it is needed (the panel must already be visible). */
+function createMeetingMap() {
+    const host = document.getElementById('meeting-map');
+    if (!window.L || !window.L.maplibreGL) {
+        host.innerHTML = '<div class="map-placeholder">The map could not load. Check your connection; the default meeting point will still be used.</div>';
+        return null;
+    }
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    try {
+        const map = L.map(host, {
+            scrollWheelZoom: false, attributionControl: false,
+            zoomAnimation: !calm, fadeAnimation: !calm, markerZoomAnimation: !calm, inertia: !calm
+        }).setView(MAP_START_VIEW, 10, { animate: false });
+        L.maplibreGL({ style: MAP_STYLE_URL, attribution: MAP_ATTRIBUTION }).addTo(map);
+        L.control.attribution({ prefix: false }).addTo(map);
+        // Click (or tap) anywhere to put the pin there.
+        map.on('click', (event) => setMeetingPoint(event.latlng));
+        // Keyboard route: Enter puts the pin at the centre of the map.
+        host.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && event.target === host) {
+                event.preventDefault();
+                setMeetingPoint(map.getCenter());
+            }
+        });
+        return map;
+    } catch (error) {
+        console.warn('Meeting map could not start:', error);
+        host.innerHTML = '<div class="map-placeholder">The map could not start in this browser. The default meeting point will still be used.</div>';
+        return null;
+    }
+}
+
+/** Show the current point on the map (recentring only when asked, so clicks do not make it jump). */
+function showMeetingOnMap(meeting, recenter) {
+    if (!meetingMap) meetingMap = createMeetingMap();
+    if (!meetingMap) return;
+    if (!meeting) {
+        if (meetingMarker) { meetingMarker.remove(); meetingMarker = null; }
+        if (recenter) meetingMap.setView(MAP_START_VIEW, 10, { animate: false });
+    } else {
+        const latlng = [meeting.lat, meeting.lon];
+        if (!meetingMarker) {
+            meetingMarker = L.marker(latlng, { icon: meetingMarkerIcon(), draggable: true, title: 'Meeting point (drag to move)' }).addTo(meetingMap);
+            meetingMarker.on('dragend', () => setMeetingPoint(meetingMarker.getLatLng()));
+        } else {
+            meetingMarker.setLatLng(latlng);
+        }
+        if (recenter) meetingMap.setView(latlng, 15, { animate: false });
+    }
+    // The dialog animates in and the panel was hidden, so re-measure once it has settled.
+    [60, 520].forEach((delay) => window.setTimeout(() => { if (meetingMap) meetingMap.invalidateSize(); }, delay));
+}
+
+/** The manager clicked the map, dragged the pin or pressed Enter on the map. */
+function setMeetingPoint(latlng) {
+    meetingDraft = { lat: latlng.lat, lon: latlng.lng };
+    updateMeetingUI({ recenter: false });
+}
+
+/** Bring the "Meeting point" line, the panel and the map in step with the current location and point. */
+function updateMeetingUI({ recenter = true } = {}) {
+    const block = document.getElementById('meeting');
+    const chosen = hasLocationChoice();
+    block.hidden = !chosen;
+    if (!chosen) return;
+
+    const site = activeSite();
+    const hasDefault = Boolean(site && site.meeting);
+    const meeting = currentMeeting();
+    const name = document.getElementById('meeting-name').value.trim();
+    const open = hasDefault ? meetingOpen : true;
+
+    // Quiet line (only for sites with a carpark): "Meeting point: Brownsham carpark   Change"
+    document.getElementById('meeting-line').hidden = !hasDefault;
+    if (hasDefault) {
+        document.getElementById('meeting-label').textContent = meeting.custom ? (name || 'Pin dropped on the map') : meeting.label;
+    }
+    const change = document.getElementById('meeting-change');
+    change.setAttribute('aria-expanded', String(open));
+
+    // Panel: map, optional name, and a way back to the default.
+    document.getElementById('meeting-panel').hidden = !open;
+    document.getElementById('meeting-hint').textContent = hasDefault
+        ? 'Click the map or drag the pin to move the meeting point.'
+        : (meeting ? 'Click the map or drag the pin to move the meeting point.' : 'Drop a pin for the meeting point (optional).');
+    document.getElementById('meeting-name-field').hidden = !meeting;
+    const reset = document.getElementById('meeting-reset');
+    reset.textContent = hasDefault ? 'Use carpark instead' : 'Remove pin';
+    reset.hidden = hasDefault ? false : !meeting;
+
+    if (open) showMeetingOnMap(meeting, recenter);
+}
+
+/** Wire the Change, name and reset controls once. */
+function bindMeetingEvents() {
+    document.getElementById('meeting-change').addEventListener('click', () => {
+        meetingOpen = !meetingOpen;
+        updateMeetingUI();
+        // Bring the freshly opened map into view inside the scrolling dialog.
+        if (meetingOpen) {
+            const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            window.setTimeout(() => document.getElementById('meeting-panel').scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' }), 80);
+        }
+    });
+    document.getElementById('meeting-reset').addEventListener('click', () => {
+        resetMeeting();
+        updateMeetingUI();
+        if (activeSite()?.meeting) document.getElementById('meeting-change').focus();
+    });
+    // Naming the spot keeps the pin where it is (starting from the carpark if it has not moved).
+    document.getElementById('meeting-name').addEventListener('input', () => {
+        if (!meetingDraft) {
+            const point = currentMeeting();
+            if (point) meetingDraft = { lat: point.lat, lon: point.lon };
+        }
+        updateMeetingUI({ recenter: false });
+    });
 }
 
 // ---------------------------------------------------------------------------

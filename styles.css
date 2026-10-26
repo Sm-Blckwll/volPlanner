@@ -3,27 +3,16 @@
    and calendar.css. */
 
 .page { display: grid; gap: var(--space-6); padding-block: var(--space-6) var(--space-12); }
-.header-actions .button { white-space: nowrap; }
-
-/* Header: compact banner over a photo, shaded so white text stays AA. ------------ */
-@keyframes fade-in { from { opacity: 0; } }
-.site-header-photo { position: relative; isolation: isolate; z-index: auto; color: #fff; background: var(--hero); border-bottom: 0; }
-.site-header-photo::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--hero) 90%, transparent) 0%, color-mix(in srgb, var(--hero) 62%, transparent) 38%, color-mix(in srgb, var(--hero) 12%, transparent) 100%),
-    url("header-photo.jpg") center 38% / cover no-repeat;
-  animation: fade-in var(--dur-slow) var(--ease) backwards; }
-.site-header-photo .header-inner { min-height: 112px; }
-.site-header-photo .brand-title { color: #fff; font-size: var(--text-xl); }
-.site-header-photo .brand-mark { color: var(--hero); background: #fff; }
-.site-header-photo .button { color: #fff; background: color-mix(in srgb, var(--hero) 82%, transparent); border-color: rgba(255, 255, 255, .6); backdrop-filter: blur(6px); }
-.site-header-photo .button:hover:not(:disabled) { background: color-mix(in srgb, var(--hero) 94%, transparent); box-shadow: none; }
-.site-header-photo .button-primary { color: var(--hero); background: #fff; border-color: #fff; }
-.site-header-photo .button-primary:hover:not(:disabled) { background: rgba(255, 255, 255, .88); border-color: transparent; }
+/* Page actions: Load, Save and PDF above the calendar. ------------------------------ */
+.page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.page-actions .button { white-space: nowrap; }
 
 /* Task editor: a single column of steps. ---------------------------------------- */
 .task-modal { width: min(100%, 600px); }
 .task-modal .modal-body { padding-block: var(--space-6) var(--space-8); }
+/* Taller dialog: grows to fit its content (no scroll when the window is tall enough) and only scrolls when the window is too short. */
+.task-modal { max-height: calc(100dvh - 2 * var(--space-4)); }
+@media (min-width: 641px) { #task-modal { padding-block: var(--space-4); } }
 .quick-fill summary { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 32px; color: var(--text-muted); font-size: var(--text-sm); font-weight: 600; cursor: pointer; list-style: none; }
 .quick-fill summary::-webkit-details-marker { display: none; }
 .quick-fill summary::after { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform var(--dur) var(--ease); }
@@ -36,11 +25,7 @@
 @media (max-width: 640px) {
   .page { gap: var(--space-4); padding-top: var(--space-4); }
   .panel { padding: var(--space-4) var(--space-3); }
-  .header-inner { flex-wrap: wrap; padding-block: var(--space-4); }
-  .site-header-photo .header-inner { min-height: 0; }
-  .site-header-photo::before { background-image: linear-gradient(90deg, color-mix(in srgb, var(--hero) 94%, transparent) 0%, color-mix(in srgb, var(--hero) 84%, transparent) 60%, color-mix(in srgb, var(--hero) 66%, transparent) 100%), url("header-photo.jpg"); }
-  .header-actions { width: 100%; }
-  .header-actions .button:not(.button-icon) { flex: 1; }
+  .page-actions .button { flex: 1; }
   .modal-footer .button { flex: 1; }
   .modal-footer #btn-delete { flex: none; margin-right: 0; }
 }
@@ -58,3 +43,28 @@ html .fc .fc-highlight { background: var(--brand-tint); box-shadow: inset 0 0 0 
 .is-dragging, .is-dragging .fc-daygrid-event { cursor: grabbing; }
 .is-dragging .fc-daygrid-day:hover { background-color: transparent; }
 .is-dragging .fc-daygrid-event:hover { transform: none; box-shadow: none; }
+
+/* Meeting point in the "Where is it?" step. -------------------------------------- */
+.meeting { display: grid; gap: var(--space-2); }
+.meeting-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-2); margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+.meeting-line > svg { width: 16px; height: 16px; flex: none; color: var(--brand-text); }
+.meeting-line strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+/* Text-link buttons: a 44px touch area without making the quiet line taller. */
+.meeting-link { justify-self: start; margin-block: calc(var(--space-3) * -1); padding: var(--space-3) var(--space-2); color: var(--brand-text); background: none; border: 0; border-radius: var(--radius); font: inherit; font-size: var(--text-sm); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.meeting-link:hover { text-decoration-thickness: 2px; }
+.meeting-line .meeting-link { margin-inline-start: var(--space-1); }
+.meeting-panel { display: grid; gap: var(--space-3); padding: var(--space-3); background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); animation: rise var(--dur) var(--ease); }
+.meeting-hint, .meeting-keys { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+.meeting-keys { display: none; font-size: var(--text-xs); }
+.meeting-map:focus-visible + .meeting-keys { display: block; }
+.meeting-map { isolation: isolate; height: 220px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.meeting-map:focus-visible { outline: 2px solid var(--brand-text); outline-offset: 2px; }
+.meeting-map .map-placeholder { display: grid; place-items: center; height: 100%; padding: var(--space-4); color: var(--text-muted); font-size: var(--text-sm); text-align: center; }
+/* The pin: a brand-coloured circle with a white ring (no marker image files). */
+.meeting-pin { display: block; width: 28px; height: 28px; background: var(--brand); border: 4px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), var(--shadow-2); cursor: grab; }
+.meeting-pin-wrap:focus-visible .meeting-pin { outline: 2px solid var(--brand-text); outline-offset: 3px; }
+.meeting-pin-wrap:active .meeting-pin { cursor: grabbing; }
+/* Quiet "Meet at" line on directory cards (only for a non-default meeting point). */
+.task-card-meet { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+.task-card-meet svg { width: 16px; height: 16px; flex: none; color: var(--brand-text); }
+.meeting-map .leaflet-tile-pane { filter: var(--map-filter); }
